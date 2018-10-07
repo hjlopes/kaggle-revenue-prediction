@@ -193,6 +193,9 @@ def preprocess_missings(df):
     df['totals.bounces'] = df['totals.bounces'].astype("int", copy=False)
     df['totals.newVisits'].fillna(0, inplace=True)
     df['totals.newVisits'] = df['totals.newVisits'].astype("int", copy=False)
+    df['totals.transactionRevenue'].fillna(0, inplace=True)
+    df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype("float", copy=False)
+
     return df
 
 
