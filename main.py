@@ -222,12 +222,14 @@ def generate_user_aggregate_features(df):
     """
     aggs = {
         'date': ['min', 'max'],
-        'transactionRevenue': ['sum', 'size'],
         'totals.hits': ['sum', 'min', 'max', 'mean', 'median'],
         'totals.pageviews': ['sum', 'min', 'max', 'mean', 'median'],
         'totals.bounces': ['sum', 'mean', 'median'],
         'totals.newVisits': ['sum', 'mean', 'median']
     }
+    if 'transactionRevenue' in df.columns:
+        aggs['transactionRevenue'] = ['sum', 'size']
+
     users = df.groupby('fullVisitorId').agg(aggs)
 
     # Generate column names
@@ -235,15 +237,19 @@ def generate_user_aggregate_features(df):
         c + '_' + agg for c in aggs.keys() for agg in aggs[c]
     ]
     users.columns = columns
-
     logger.info("Finished aggregations. New columns: {}".format(columns))
-    users['transactionRevenue_sum'] = np.log1p(users['transactionRevenue_sum'])
-    target = users['transactionRevenue_sum']
-    users.drop(['date_min', 'date_max', 'transactionRevenue_sum'], axis=1, inplace=True)
-    return users, target
+
+    if 'transactionRevenue' in df.columns:
+        users['transactionRevenue_sum'] = np.log1p(users['transactionRevenue_sum'])
+        y = users['transactionRevenue_sum']
+        users.drop(['transactionRevenue_sum'], axis=1, inplace=True)
+    else:
+        y = None
+
+    users.drop(['date_min', 'date_max'], axis=1, inplace=True)
+    return users, y
 
 
-# def train_user_level(train_df, y, )
 logger = get_logger()
 
 #%%
@@ -270,7 +276,7 @@ if __name__ == "__main__":
 
     #%%
     # Load reduced df
-    train_path = 'data/reduced_train_ndf.pickle'
+    train_path = 'data/reduced_train_df.pickle'
     test_path = 'data/reduced_test_df.pickle'
     train_df = load_pickle(train_path)
     test_df = load_pickle(test_path)
@@ -295,5 +301,5 @@ if __name__ == "__main__":
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
-
-
+    train_users, target = generate_user_aggregate_features(train_df)
+    test_users, _ = generate_user_aggregate_features(test_df)
