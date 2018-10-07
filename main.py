@@ -11,15 +11,17 @@ import pandas as pd
 from pandas.io.json import json_normalize
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import GroupKFold, KFold
 from sklearn.metrics import mean_squared_error
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import Imputer
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
 
-import lightgbm as gbm
+
+import lightgbm as lgb
 
 
 def load_csv(path, nrows=None):
@@ -34,7 +36,7 @@ def load_csv(path, nrows=None):
         column_as_df = json_normalize(df[column])
         column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
         df = df.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
-
+    df = preprocess_missings(df)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
 
     return df
@@ -98,12 +100,10 @@ def factorize_variables(df, excluded=[], cat_indexers=None):
     if cat_indexers is None:
         cat_indexers = {}
         for f in categorical_features:
-            print(f)
             df[f], indexer = pd.factorize(df[f])
             cat_indexers[f] = indexer
     else:
         for f in categorical_features:
-            print(f)
             df[f] = cat_indexers[f].get_indexer(df[f])
 
     return df, cat_indexers, categorical_features
@@ -154,6 +154,9 @@ def get_logger():
 
 ### Particular dataset functions
 
+def rmse(y_true, y_pred):
+    return mean_squared_error(y_true, y_pred) ** 0.5
+
 
 def get_folds(df=None, n_splits=5):
     """Returns dataframe indices corresponding to Visitors Group KFold"""
@@ -193,8 +196,10 @@ def preprocess_missings(df):
     df['totals.bounces'] = df['totals.bounces'].astype("int", copy=False)
     df['totals.newVisits'].fillna(0, inplace=True)
     df['totals.newVisits'] = df['totals.newVisits'].astype("int", copy=False)
-    df['totals.transactionRevenue'].fillna(0, inplace=True)
-    df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype("float", copy=False)
+
+    if 'totals.transactionRevenue' in df.columns:
+        df['totals.transactionRevenue'].fillna(0, inplace=True)
+        df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype("float", copy=False)
 
     return df
 
@@ -230,8 +235,8 @@ def generate_user_aggregate_features(df):
         'totals.bounces': ['sum', 'mean', 'median'],
         'totals.newVisits': ['sum', 'mean', 'median']
     }
-    if 'transactionRevenue' in df.columns:
-        aggs['transactionRevenue'] = ['sum', 'size']
+    if 'totals.transactionRevenue' in df.columns:
+        aggs['totals.transactionRevenue'] = ['sum']
 
     users = df.groupby('fullVisitorId').agg(aggs)
 
@@ -242,16 +247,79 @@ def generate_user_aggregate_features(df):
     users.columns = columns
     logger.info("Finished aggregations. New columns: {}".format(columns))
 
-    if 'transactionRevenue' in df.columns:
-        users['transactionRevenue_sum'] = np.log1p(users['transactionRevenue_sum'])
-        y = users['transactionRevenue_sum']
-        users.drop(['transactionRevenue_sum'], axis=1, inplace=True)
+    if 'totals.transactionRevenue' in df.columns:
+        users['totals.transactionRevenue_sum'] = np.log1p(users['totals.transactionRevenue_sum'])
+        y = users['totals.transactionRevenue_sum']
+        users.drop(['totals.transactionRevenue_sum'], axis=1, inplace=True)
     else:
         y = None
 
     users.drop(['date_min', 'date_max'], axis=1, inplace=True)
     return users, y
 
+
+def train_user_level(train, test, y):
+    try:
+        folds = KFold(n_splits=5, shuffle=True, random_state=1123442)
+
+        sub_preds = np.zeros(test.shape[0])
+        oof_preds = np.zeros(train.shape[0])
+        oof_scores = []
+
+        lgb_params = {
+            'learning_rate': 0.03,
+            'n_estimators': 2000,
+            'num_leaves': 128,
+            'subsample': 0.2217,
+            'colsample_bytree': 0.6810,
+            'min_split_gain': np.power(10.0, -4.9380),
+            'reg_alpha': np.power(10.0, -3.2454),
+            'reg_lambda': np.power(10.0, -4.8571),
+            'min_child_weight': np.power(10.0, 2),
+            'silent': True
+        }
+
+        for fold_, (trn_, val_) in enumerate(folds.split(train)):
+            model = lgb.LGBMRegressor(**lgb_params)
+
+            model.fit(
+                train.iloc[trn_], y.iloc[trn_],
+                eval_set=[(train.iloc[trn_], y.iloc[trn_]),
+                          (train.iloc[val_], y.iloc[val_])],
+                eval_metric='rmse',
+                early_stopping_rounds=200,
+                verbose=0
+            )
+
+            oof_preds[val_] = model.predict(train.iloc[val_])
+            curr_sub_preds = model.predict(test)
+            curr_sub_preds[curr_sub_preds < 0] = 0
+            sub_preds += curr_sub_preds / folds.n_splits
+
+            logger.info('Fold %d RMSE (raw output) : %.5f' % (fold_ + 1, rmse(y.iloc[val_], oof_preds[val_])))
+            oof_preds[oof_preds < 0] = 0
+            oof_scores.append(rmse(y.iloc[val_], oof_preds[val_]))
+            logger.info('Fold %d RMSE : %.5f' % (fold_ + 1, oof_scores[-1]))
+
+        logger.info(
+            'Full OOF RMSE (zero clipped): %.5f +/- %.5f' % (rmse(y, oof_preds), float(np.std(oof_scores))))
+
+        # Stay in logs for submission
+        test['PredictedLogRevenue'] = sub_preds
+        test[['PredictedLogRevenue']].to_csv("simple_lgb.csv", index=True)
+
+        logger.info('Submission data shape : {}'.format(test[['PredictedLogRevenue']].shape))
+
+        hist, bin_edges = np.histogram(np.hstack((oof_preds, sub_preds)), bins=25)
+        plt.figure(figsize=(12, 7))
+        plt.title('Distributions of OOF and TEST predictions', fontsize=15, fontweight='bold')
+        plt.hist(oof_preds, label='OOF predictions', alpha=.6, bins=bin_edges, density=True, log=True)
+        plt.hist(sub_preds, label='TEST predictions', alpha=.6, bins=bin_edges, density=True, log=True)
+        plt.legend()
+        plt.savefig('distributions.png')
+
+    except Exception as err:
+        logger.exception("Unexpected error")
 
 logger = get_logger()
 
@@ -285,11 +353,11 @@ if __name__ == "__main__":
     test_df = load_pickle(test_path)
 
     #%%
-    print(missing_values_table(train_df))
-    print(missing_values_table(test_df))
-    df_show_value_types(train_df)
-    df_show_value_types(test_df)
-    plot_transaction_revenue(train_df)
+    # print(missing_values_table(train_df))
+    # print(missing_values_table(test_df))
+    # df_show_value_types(train_df)
+    # df_show_value_types(test_df)
+    # plot_transaction_revenue(train_df)
 
     #%%
     generate_features(train_df)
@@ -299,10 +367,12 @@ if __name__ == "__main__":
         'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
         'visitId', 'visitStartTime', 'non_zero_proba'
     ]
-    train_df = preprocess_missings(train_df)
-    test_df = preprocess_missings(test_df)
+    # train_df = preprocess_missings(train_df)
+    # test_df = preprocess_missings(test_df)
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
     train_users, target = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
+    train_user_level(train_users, test_users, target)
+
