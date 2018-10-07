@@ -88,19 +88,22 @@ def load_pickle(filename):
     return data
 
 
-def factorize_variables(df, excluded_columns=[], cat_indexers=None):
+def factorize_variables(df, excluded=[], cat_indexers=None):
     categorical_features = [
         _f for _f in df.columns
-        if (_f not in excluded_columns) & (df[_f].dtype == 'object')
+        if (_f not in excluded) & (df[_f].dtype == 'object')
     ]
     logger.info("Categorical features: {}".format(categorical_features))
+
     if cat_indexers is None:
         cat_indexers = {}
         for f in categorical_features:
+            print(f)
             df[f], indexer = pd.factorize(df[f])
             cat_indexers[f] = indexer
     else:
         for f in categorical_features:
+            print(f)
             df[f] = cat_indexers[f].get_indexer(df[f])
 
     return df, cat_indexers, categorical_features
@@ -194,12 +197,53 @@ def preprocess_missings(df):
 
 
 def generate_features(df):
+    # Add date features
     df['date'] = pd.to_datetime(df['visitStartTime'], unit='s')
     df['sess_date_dow'] = df['date'].dt.dayofweek
     df['sess_date_hours'] = df['date'].dt.hour
     df['sess_date_dom'] = df['date'].dt.day
     df['sess_date_mon'] = df['date'].dt.month
 
+    # Add cumulative count for user
+    df['dummy'] = 1
+    df['user_cumcnt_per_day'] = (df[['fullVisitorId','date', 'dummy']].groupby(['fullVisitorId','date'])['dummy'].cumcount()+1)
+    df['user_sum_per_day'] = df[['fullVisitorId','date', 'dummy']].groupby(['fullVisitorId','date'])['dummy'].transform(sum)
+    df['user_cumcnt_sum_ratio_per_day'] = df['user_cumcnt_per_day'] / df['user_sum_per_day']
+    df.drop('dummy', axis=1, inplace=True)
+
+
+def generate_user_aggregate_features(df):
+    """
+    Aggregate session data for each fullVisitorId
+    :param df: DataFrame to aggregate on
+    :param cat_feats: List of Categorical features
+    :param sum_of_logs: if set to True, revenues are first log transformed and then summed up
+    :return: aggregated fullVisitorId data over Sessions
+    """
+    aggs = {
+        'date': ['min', 'max'],
+        'transactionRevenue': ['sum', 'size'],
+        'totals.hits': ['sum', 'min', 'max', 'mean', 'median'],
+        'totals.pageviews': ['sum', 'min', 'max', 'mean', 'median'],
+        'totals.bounces': ['sum', 'mean', 'median'],
+        'totals.newVisits': ['sum', 'mean', 'median']
+    }
+    users = df.groupby('fullVisitorId').agg(aggs)
+
+    # Generate column names
+    columns = [
+        c + '_' + agg for c in aggs.keys() for agg in aggs[c]
+    ]
+    users.columns = columns
+
+    logger.info("Finished aggregations. New columns: {}".format(columns))
+    users['transactionRevenue_sum'] = np.log1p(users['transactionRevenue_sum'])
+    target = users['transactionRevenue_sum']
+    users.drop(['date_min', 'date_max', 'transactionRevenue_sum'], axis=1, inplace=True)
+    return users, target
+
+
+# def train_user_level(train_df, y, )
 logger = get_logger()
 
 #%%
@@ -221,7 +265,7 @@ if __name__ == "__main__":
 
     #%%
     # Dump data to pickles
-    data_to_pickle(train_df, 'data/reduced_train_ndf.pickle')
+    data_to_pickle(train_df, 'data/reduced_train_df.pickle')
     data_to_pickle(test_df, 'data/reduced_test_df.pickle')
 
     #%%
@@ -242,14 +286,14 @@ if __name__ == "__main__":
     generate_features(train_df)
     generate_features(test_df)
 
-    excluded_features = [
+    excluded_feat = [
         'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
         'visitId', 'visitStartTime', 'non_zero_proba'
     ]
     train_df = preprocess_missings(train_df)
     test_df = preprocess_missings(test_df)
-    train_df = hotencode_variables(train_df, excluded_columns=excluded_features)
-    test_df = hotencode_variables(test_df, excluded_columns=excluded_features)
+    train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
+    test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
 
 
