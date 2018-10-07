@@ -3,6 +3,7 @@ import os
 import json
 import pickle
 import gc
+import logging
 gc.enable()
 
 import numpy as np
@@ -87,18 +88,25 @@ def load_pickle(filename):
     return data
 
 
-def factorize_categorical(train, test, excluded):
+def factorize_variables(df, excluded_columns=[], cat_indexers=None):
     categorical_features = [
-        _f for _f in train.columns
-        if (_f not in excluded) & (train[_f].dtype == 'object')
+        _f for _f in df.columns
+        if (_f not in excluded_columns) & (df[_f].dtype == 'object')
     ]
+    logger.info("Categorical features: {}".format(categorical_features))
+    if cat_indexers is None:
+        cat_indexers = {}
+        for f in categorical_features:
+            df[f], indexer = pd.factorize(df[f])
+            cat_indexers[f] = indexer
+    else:
+        for f in categorical_features:
+            df[f] = cat_indexers[f].get_indexer(df[f])
 
-    for f in categorical_features:
-        train[f], indexer = pd.factorize(train[f])
-        test[f] = indexer.get_indexer(test[f])
+    return df, cat_indexers, categorical_features
 
 
-def encode_variables(df, excluded_columns=[], nan_as_category=False):
+def hotencode_variables(df, excluded_columns=[], nan_as_category=False):
     # Encode binary class with Label encoder
     categorical_features = [
         _f for _f in df.columns
@@ -122,6 +130,23 @@ def encode_variables(df, excluded_columns=[], nan_as_category=False):
 
 def align_train_test(train_df, test_df):
     return train_df.align(test_df, join='inner', axis=1)
+
+
+def get_logger():
+    logger_ = logging.getLogger('main')
+    logger_.setLevel(logging.DEBUG)
+    fh = logging.FileHandler('simple_lightgbm.log')
+    fh.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(levelname)s]%(asctime)s:%(name)s:%(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger_.addHandler(fh)
+    logger_.addHandler(ch)
+
+    return logger_
 
 
 ### Particular dataset functions
@@ -175,6 +200,8 @@ def generate_features(df):
     df['sess_date_dom'] = df['date'].dt.day
     df['sess_date_mon'] = df['date'].dt.month
 
+logger = get_logger()
+
 #%%
 if __name__ == "__main__":
     # %%
@@ -221,8 +248,8 @@ if __name__ == "__main__":
     ]
     train_df = preprocess_missings(train_df)
     test_df = preprocess_missings(test_df)
-    train_df = encode_variables(train_df, excluded_columns=excluded_features)
-    test_df = encode_variables(test_df, excluded_columns=excluded_features)
+    train_df = hotencode_variables(train_df, excluded_columns=excluded_features)
+    test_df = hotencode_variables(test_df, excluded_columns=excluded_features)
 
 
 
