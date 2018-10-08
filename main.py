@@ -36,7 +36,7 @@ def load_csv(path, nrows=None):
         column_as_df = json_normalize(df[column])
         column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
         df = df.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
-    df = preprocess_missings(df)
+    df = preprocess_features(df)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
 
     return df
@@ -189,13 +189,21 @@ def plot_transaction_revenue(df):
     plt.show()
 
 
-def preprocess_missings(df):
+def preprocess_features(df):
     df['trafficSource.adwordsClickInfo.isVideoAd'].fillna(True, inplace=True)  # Variable only contains Falses
     df['trafficSource.isTrueDirect'].fillna(False, inplace=True)  # Variable only contains Trues
     df['totals.bounces'].fillna(0, inplace=True)
     df['totals.bounces'] = df['totals.bounces'].astype("int", copy=False)
     df['totals.newVisits'].fillna(0, inplace=True)
     df['totals.newVisits'] = df['totals.newVisits'].astype("int", copy=False)
+    df['totals.pageviews'].fillna(0, inplace=True)
+    df['totals.pageviews'] = df['totals.pageviews'].astype("int", copy=False)
+    df['totals.hits'].fillna(0, inplace=True)
+    df['totals.hits'].astype('int', copy=False)
+
+    # Remove silly column?
+    if 'trafficSource.campaignCode' in df.columns:
+        df.drop(columns=['trafficSource.campaignCode'], inplace=True)
 
     if 'totals.transactionRevenue' in df.columns:
         df['totals.transactionRevenue'].fillna(0, inplace=True)
@@ -206,16 +214,32 @@ def preprocess_missings(df):
 
 def generate_features(df):
     # Add date features
-    df['date'] = pd.to_datetime(df['visitStartTime'], unit='s')
-    df['sess_date_dow'] = df['date'].dt.dayofweek
-    df['sess_date_hours'] = df['date'].dt.hour
-    df['sess_date_dom'] = df['date'].dt.day
-    df['sess_date_mon'] = df['date'].dt.month
+    df['visit_date'] = pd.to_datetime(df['visitStartTime'], unit='s')
+    df['sess_date_dow'] = df['visit_date'].dt.dayofweek
+    df['sess_date_hours'] = df['visit_date'].dt.hour
+    df['sess_date_dom'] = df['visit_date'].dt.day
+    df['sess_date_mon'] = df['visit_date'].dt.month
+
+    # Add next session features
+    df.sort_values(['fullVisitorId', 'visit_date'], ascending=True, inplace=True)
+    df['next_session_1'] = (
+       df['visit_date'] - df[['fullVisitorId', 'visit_date']].groupby('fullVisitorId')[
+                               'visit_date'].shift(1)
+                           ).astype(np.int64) // 1e9 // 60 // 60
+    df['next_session_2'] = (
+        df['visit_date'] - df[['fullVisitorId', 'visit_date']].groupby('fullVisitorId')[
+                               'visit_date'].shift(-1)
+                           ).astype(np.int64) // 1e9 // 60 // 60
+    df['nb_pageviews'] = df['visit_date'].map(
+        df[['visit_date', 'totals.pageviews']].groupby('visit_date')['totals.pageviews'].sum()
+    )
+
+    df['ratio_pageviews'] = df['totals.pageviews'] / df['nb_pageviews']
 
     # Add cumulative count for user
     df['dummy'] = 1
-    df['user_cumcnt_per_day'] = (df[['fullVisitorId','date', 'dummy']].groupby(['fullVisitorId','date'])['dummy'].cumcount()+1)
-    df['user_sum_per_day'] = df[['fullVisitorId','date', 'dummy']].groupby(['fullVisitorId','date'])['dummy'].transform(sum)
+    df['user_cumcnt_per_day'] = (df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].cumcount()+1)
+    df['user_sum_per_day'] = df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].transform(sum)
     df['user_cumcnt_sum_ratio_per_day'] = df['user_cumcnt_per_day'] / df['user_sum_per_day']
     df.drop('dummy', axis=1, inplace=True)
 
@@ -229,7 +253,6 @@ def generate_user_aggregate_features(df):
     :return: aggregated fullVisitorId data over Sessions
     """
     aggs = {
-        'date': ['min', 'max'],
         'totals.hits': ['sum', 'min', 'max', 'mean', 'median'],
         'totals.pageviews': ['sum', 'min', 'max', 'mean', 'median'],
         'totals.bounces': ['sum', 'mean', 'median'],
@@ -254,7 +277,6 @@ def generate_user_aggregate_features(df):
     else:
         y = None
 
-    users.drop(['date_min', 'date_max'], axis=1, inplace=True)
     return users, y
 
 
@@ -337,7 +359,6 @@ if __name__ == "__main__":
     const_train = constant_columns(train_df)
     const_test = constant_columns(test_df)
     train_df = train_df.drop(columns=const_train)
-    train_df = train_df.drop(columns=['trafficSource.campaignCode'])
     test_df = test_df.drop(columns=const_test)
 
     #%%
@@ -345,12 +366,6 @@ if __name__ == "__main__":
     data_to_pickle(train_df, 'data/reduced_train_df.pickle')
     data_to_pickle(test_df, 'data/reduced_test_df.pickle')
 
-    #%%
-    # Load reduced df
-    train_path = 'data/reduced_train_df.pickle'
-    test_path = 'data/reduced_test_df.pickle'
-    train_df = load_pickle(train_path)
-    test_df = load_pickle(test_path)
 
     #%%
     # print(missing_values_table(train_df))
@@ -360,11 +375,18 @@ if __name__ == "__main__":
     # plot_transaction_revenue(train_df)
 
     #%%
+    # Load reduced df
+    train_path = 'data/reduced_train_df.pickle'
+    test_path = 'data/reduced_test_df.pickle'
+    train_df = load_pickle(train_path)
+    test_df = load_pickle(test_path)
+
+    #%%
     generate_features(train_df)
     generate_features(test_df)
 
     excluded_feat = [
-        'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
+        'visit_date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
         'visitId', 'visitStartTime', 'non_zero_proba'
     ]
     # train_df = preprocess_missings(train_df)
@@ -375,4 +397,3 @@ if __name__ == "__main__":
     train_users, target = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
     train_user_level(train_users, test_users, target)
-
