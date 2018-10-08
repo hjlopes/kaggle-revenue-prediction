@@ -280,6 +280,50 @@ def generate_user_aggregate_features(df):
     return users, y
 
 
+def train_session_level(train, test, y, excluded):
+    folds = get_folds(df=train, n_splits=5)
+
+    train_features = [_f for _f in train.columns if _f not in excluded]
+    print(train_features)
+
+    importances = pd.DataFrame()
+    oof_reg_preds = np.zeros(train.shape[0])
+    sub_reg_preds = np.zeros(test.shape[0])
+    for fold_, (trn_, val_) in enumerate(folds):
+        trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
+        val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
+
+        reg = lgb.LGBMRegressor(
+            num_leaves=31,
+            learning_rate=0.03,
+            n_estimators=1000,
+            subsample=.9,
+            colsample_bytree=.9,
+            random_state=1
+        )
+        reg.fit(
+            trn_x, np.log1p(trn_y),
+            eval_set=[(val_x, np.log1p(val_y))],
+            early_stopping_rounds=50,
+            verbose=100,
+            eval_metric='rmse'
+        )
+        imp_df = pd.DataFrame()
+        imp_df['feature'] = train_features
+        imp_df['gain'] = reg.booster_.feature_importance(importance_type='gain')
+
+        imp_df['fold'] = fold_ + 1
+        importances = pd.concat([importances, imp_df], axis=0, sort=False)
+
+        oof_reg_preds[val_] = reg.predict(val_x, num_iteration=reg.best_iteration_)
+        oof_reg_preds[oof_reg_preds < 0] = 0
+        _preds = reg.predict(test[train_features], num_iteration=reg.best_iteration_)
+        _preds[_preds < 0] = 0
+        sub_reg_preds += np.expm1(_preds) / len(folds)
+
+    mean_squared_error(np.log1p(y), oof_reg_preds) ** .5
+
+
 def train_user_level(train, test, y):
     try:
         folds = KFold(n_splits=5, shuffle=True, random_state=1123442)
@@ -387,13 +431,14 @@ if __name__ == "__main__":
 
     excluded_feat = [
         'visit_date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
-        'visitId', 'visitStartTime', 'non_zero_proba'
+        'visitId', 'visitStartTime', 'nb_sessions', 'max_visits'
     ]
     # train_df = preprocess_missings(train_df)
     # test_df = preprocess_missings(test_df)
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
+    train_session_level(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
     train_users, target = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
     train_user_level(train_users, test_users, target)
