@@ -291,6 +291,22 @@ def feature_importance(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
+def stack_features(df):
+    df_user_group = df.groupby('fullVisitorId').mean()
+    trn_pred_list = df[['fullVisitorId', 'predictions']].groupby('fullVisitorId') \
+        .apply(lambda _df: list(_df.predictions)) \
+        .apply(lambda x: {'pred_' + str(i): pred for i, pred in enumerate(x)})
+
+    trn_all_predictions = pd.DataFrame(list(trn_pred_list.values), index=df_user_group.index)
+    trn_feats = trn_all_predictions.columns
+    trn_all_predictions['t_mean'] = np.log1p(trn_all_predictions[trn_feats].mean(axis=1))
+    trn_all_predictions['t_median'] = np.log1p(trn_all_predictions[trn_feats].median(axis=1))
+    trn_all_predictions['t_sum_log'] = np.log1p(trn_all_predictions[trn_feats]).sum(axis=1)
+    trn_all_predictions['t_sum_act'] = np.log1p(trn_all_predictions[trn_feats].fillna(0).sum(axis=1))
+    trn_all_predictions['t_nb_sess'] = trn_all_predictions[trn_feats].isnull().sum(axis=1)
+    full_data = pd.concat([df_user_group, trn_all_predictions], axis=1)
+    return full_data
+
 def train_session_level(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
 
@@ -336,6 +352,52 @@ def train_session_level(train, test, y, excluded):
     mean_squared_error(np.log1p(y), oof_reg_preds) ** .5
 
     return np.expm1(oof_reg_preds), sub_reg_preds
+
+
+def train_visit_level(full_data, test_full_data, y):
+    folds = get_folds(df=full_data[['totals.pageviews']].reset_index(), n_splits=5)
+
+    oof_preds = np.zeros(full_data.shape[0])
+    sub_preds = np.zeros(test_full_data.shape[0])
+    vis_importances = pd.DataFrame()
+
+    for fold_, (trn_, val_) in enumerate(folds):
+        trn_x, trn_y = full_data.iloc[trn_], y.iloc[trn_]
+        val_x, val_y = full_data.iloc[val_], y.iloc[val_]
+
+        reg = lgb.LGBMRegressor(
+            num_leaves=31,
+            learning_rate=0.03,
+            n_estimators=1000,
+            subsample=.9,
+            colsample_bytree=.9,
+            random_state=1
+        )
+        reg.fit(
+            trn_x, np.log1p(trn_y),
+            eval_set=[(trn_x, np.log1p(trn_y)), (val_x, np.log1p(val_y))],
+            eval_names=['TRAIN', 'VALID'],
+            early_stopping_rounds=50,
+            eval_metric='rmse',
+            verbose=100
+        )
+
+        imp_df = pd.DataFrame()
+        imp_df['feature'] = trn_x.columns
+        imp_df['gain'] = reg.booster_.feature_importance(importance_type='gain')
+
+        imp_df['fold'] = fold_ + 1
+        vis_importances = pd.concat([vis_importances, imp_df], axis=0, sort=False)
+
+        oof_preds[val_] = reg.predict(val_x, num_iteration=reg.best_iteration_)
+        oof_preds[oof_preds < 0] = 0
+
+        # Make sure features are in the same order
+        _preds = reg.predict(test_full_data[full_data.columns], num_iteration=reg.best_iteration_)
+        _preds[_preds < 0] = 0
+        sub_preds += _preds / len(folds)
+
+    mean_squared_error(np.log1p(y), oof_preds) ** .5
 
 
 def train_user_level(train, test, y):
@@ -458,7 +520,12 @@ if __name__ == "__main__":
     #$$
     train_df['predictions'] = train_pred
     test_df['predictions'] = test_pred
+    train_full_df = stack_features(train_df)
+    test_full_df = stack_features(test_df)
+
     train_users, target = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
 
-    train_user_level(train_users, test_users, target)
+    #%%
+    # train_user_level(train_users, test_users, target)
+    train_visit_level(train_full_df, test_full_df, target)
