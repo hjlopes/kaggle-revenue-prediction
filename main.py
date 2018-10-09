@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from pandas.io.json import json_normalize
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.model_selection import GroupKFold, KFold
 from sklearn.metrics import mean_squared_error
@@ -280,6 +281,16 @@ def generate_user_aggregate_features(df):
     return users, y
 
 
+def feature_importance(feat_importance, filename="distributions.png"):
+    feat_importance['gain_log'] = np.log1p(feat_importance['gain'])
+    mean_gain = feat_importance[['gain', 'feature']].groupby('feature').mean()
+    feat_importance['mean_gain'] = feat_importance['feature'].map(mean_gain['gain'])
+
+    plt.figure(figsize=(8, 12))
+    sns.barplot(x='gain_log', y='feature', data=feat_importance.sort_values('mean_gain', ascending=False))
+    plt.savefig(filename)
+
+
 def train_session_level(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
 
@@ -321,7 +332,10 @@ def train_session_level(train, test, y, excluded):
         _preds[_preds < 0] = 0
         sub_reg_preds += np.expm1(_preds) / len(folds)
 
+    feature_importance(importances, filename="session_feat_importance.png")
     mean_squared_error(np.log1p(y), oof_reg_preds) ** .5
+
+    return np.expm1(oof_reg_preds), sub_reg_preds
 
 
 def train_user_level(train, test, y):
@@ -438,7 +452,13 @@ if __name__ == "__main__":
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
-    train_session_level(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+    #%%
+    train_pred, test_pred = train_session_level(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+
+    #$$
+    train_df['predictions'] = train_pred
+    test_df['predictions'] = test_pred
     train_users, target = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
+
     train_user_level(train_users, test_users, target)
