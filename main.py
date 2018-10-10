@@ -291,27 +291,33 @@ def feature_importance(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
-def stack_features(df):
+def stack_features(df, train_feats=None):
     df_user_group = df.groupby('fullVisitorId').mean()
-    trn_pred_list = df[['fullVisitorId', 'predictions']].groupby('fullVisitorId') \
+    pred_list = df[['fullVisitorId', 'predictions']].groupby('fullVisitorId') \
         .apply(lambda _df: list(_df.predictions)) \
         .apply(lambda x: {'pred_' + str(i): pred for i, pred in enumerate(x)})
+    all_predictions = pd.DataFrame(list(pred_list.values), index=df_user_group.index)
 
-    trn_all_predictions = pd.DataFrame(list(trn_pred_list.values), index=df_user_group.index)
-    trn_feats = trn_all_predictions.columns
-    trn_all_predictions['t_mean'] = np.log1p(trn_all_predictions[trn_feats].mean(axis=1))
-    trn_all_predictions['t_median'] = np.log1p(trn_all_predictions[trn_feats].median(axis=1))
-    trn_all_predictions['t_sum_log'] = np.log1p(trn_all_predictions[trn_feats]).sum(axis=1)
-    trn_all_predictions['t_sum_act'] = np.log1p(trn_all_predictions[trn_feats].fillna(0).sum(axis=1))
-    trn_all_predictions['t_nb_sess'] = trn_all_predictions[trn_feats].isnull().sum(axis=1)
-    full_data = pd.concat([df_user_group, trn_all_predictions], axis=1)
-    return full_data
+    if train_feats is not None:
+        for f in train_feats:
+            if f not in all_predictions.columns:
+                all_predictions[f] = np.nan
+
+    feats = all_predictions.columns
+    all_predictions['t_mean'] = np.log1p(all_predictions[feats].mean(axis=1))
+    all_predictions['t_median'] = np.log1p(all_predictions[feats].median(axis=1))
+    all_predictions['t_sum_log'] = np.log1p(all_predictions[feats]).sum(axis=1)
+    all_predictions['t_sum_act'] = np.log1p(all_predictions[feats].fillna(0).sum(axis=1))
+    all_predictions['t_nb_sess'] = all_predictions[feats].isnull().sum(axis=1)
+    full_data = pd.concat([df_user_group, all_predictions], axis=1)
+    return full_data, feats
+
 
 def train_session_level(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
 
     train_features = [_f for _f in train.columns if _f not in excluded]
-    print(train_features)
+    logger.info("Train features: {}".format(train_features))
 
     importances = pd.DataFrame()
     oof_reg_preds = np.zeros(train.shape[0])
@@ -397,7 +403,10 @@ def train_visit_level(full_data, test_full_data, y):
         _preds[_preds < 0] = 0
         sub_preds += _preds / len(folds)
 
-    mean_squared_error(np.log1p(y), oof_preds) ** .5
+    # logger.info("Validation MSE: {]".format(mean_squared_error(np.log1p(y), oof_preds) ** .5))
+    # test_full_df = pd.DataFrame(index=train_full_df.index)
+    test_full_df['PredictedLogRevenue'] = sub_preds
+    test_full_df[['PredictedLogRevenue']].to_csv("multi_lvl_lgb.csv", index=True)
 
 
 def train_user_level(train, test, y):
@@ -506,7 +515,7 @@ if __name__ == "__main__":
     generate_features(test_df)
 
     excluded_feat = [
-        'visit_date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
+        'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
         'visitId', 'visitStartTime', 'nb_sessions', 'max_visits'
     ]
     # train_df = preprocess_missings(train_df)
@@ -520,12 +529,28 @@ if __name__ == "__main__":
     #$$
     train_df['predictions'] = train_pred
     test_df['predictions'] = test_pred
-    train_full_df = stack_features(train_df)
-    test_full_df = stack_features(test_df)
+    train_full_df, feats = stack_features(train_df)
+    test_full_df, _ = stack_features(test_df, train_feats=feats)
+    target = train_full_df['totals.transactionRevenue']
+    train_full_df.drop(columns=['totals.transactionRevenue'], inplace=True)
 
-    train_users, target = generate_user_aggregate_features(train_df)
+    #%%
+    stacked_train_path = 'data/stacked_train_df.pickle'
+    stacked_test_path = 'data/stacked_test_df.pickle'
+    # Dump data to pickles
+    data_to_pickle(train_full_df, stacked_train_path)
+    data_to_pickle(test_full_df, stacked_test_path)
+
+    #%%
+    # Load reduced df
+    train_full_df = load_pickle(stacked_train_path)
+    test_full_df = load_pickle(stacked_test_path)
+
+    #%%
+    train_users, target2 = generate_user_aggregate_features(train_df)
     test_users, _ = generate_user_aggregate_features(test_df)
 
     #%%
     # train_user_level(train_users, test_users, target)
+    trn_visitor_target = train_df[['fullVisitorId', 'totals.transactionRevenue']].groupby('fullVisitorId').sum()
     train_visit_level(train_full_df, test_full_df, target)
