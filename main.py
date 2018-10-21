@@ -1,14 +1,10 @@
 #%%
-import os
-import json
-import pickle
 import gc
 import logging
 gc.enable()
 
 import numpy as np
 import pandas as pd
-from pandas.io.json import json_normalize
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -23,24 +19,6 @@ from sklearn.metrics import mean_squared_error
 
 
 import lightgbm as lgb
-
-
-def load_csv(path, nrows=None):
-    columns = ['device', 'geoNetwork', 'totals', 'trafficSource']
-
-    df = pd.read_csv(path,
-                     converters={column: json.loads for column in columns},
-                     dtype={'fullVisitorId': 'str'},
-                     nrows=nrows)
-
-    for column in columns:
-        column_as_df = json_normalize(df[column])
-        column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
-        df = df.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
-    df = preprocess_features(df)
-    print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
-
-    return df
 
 
 def missing_values_table(df):
@@ -73,22 +51,6 @@ def missing_values_table(df):
 
 def df_show_value_types(df):
     return df.dtypes.value_counts()
-
-
-def constant_columns(df):
-    const_columns = [column for column in df.columns if df[column].nunique(dropna=False) == 1]
-    return const_columns
-
-
-def data_to_pickle(data, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
-
-
-def load_pickle(filename):
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-    return data
 
 
 def factorize_variables(df, excluded=[], cat_indexers=None):
@@ -188,29 +150,6 @@ def plot_transaction_revenue(df):
     plt.xlabel('index')
     plt.ylabel('transactionRevenue')
     plt.show()
-
-
-def preprocess_features(df):
-    df['trafficSource.adwordsClickInfo.isVideoAd'].fillna(True, inplace=True)  # Variable only contains Falses
-    df['trafficSource.isTrueDirect'].fillna(False, inplace=True)  # Variable only contains Trues
-    df['totals.bounces'].fillna(0, inplace=True)
-    df['totals.bounces'] = df['totals.bounces'].astype("int", copy=False)
-    df['totals.newVisits'].fillna(0, inplace=True)
-    df['totals.newVisits'] = df['totals.newVisits'].astype("int", copy=False)
-    df['totals.pageviews'].fillna(0, inplace=True)
-    df['totals.pageviews'] = df['totals.pageviews'].astype("int", copy=False)
-    df['totals.hits'].fillna(0, inplace=True)
-    df['totals.hits'].astype('int', copy=False)
-
-    # Remove silly column?
-    if 'trafficSource.campaignCode' in df.columns:
-        df.drop(columns=['trafficSource.campaignCode'], inplace=True)
-
-    if 'totals.transactionRevenue' in df.columns:
-        df['totals.transactionRevenue'].fillna(0, inplace=True)
-        df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype("float", copy=False)
-
-    return df
 
 
 def generate_features(df):
@@ -476,25 +415,6 @@ logger = get_logger()
 
 #%%
 if __name__ == "__main__":
-    # %%
-    # Load initial data
-    train_path = "./data/train.csv"
-    test_path = "./data/test.csv"
-    train_df = load_csv(train_path)
-    test_df = load_csv(test_path)
-
-    #%%
-    # Remove Columns with constant values
-    const_train = constant_columns(train_df)
-    const_test = constant_columns(test_df)
-    train_df = train_df.drop(columns=const_train)
-    test_df = test_df.drop(columns=const_test)
-
-    #%%
-    # Dump data to pickles
-    data_to_pickle(train_df, 'data/reduced_train_df.pickle')
-    data_to_pickle(test_df, 'data/reduced_test_df.pickle')
-
 
     #%%
     # print(missing_values_table(train_df))
