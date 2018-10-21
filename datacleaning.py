@@ -10,6 +10,7 @@ import random
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import RandomForestClassifier
 
+from main import hotencode_variables
 from utils import *
 
 
@@ -17,6 +18,7 @@ def preprocess_features(df):
     # V2 Data has substituted nans as strings
     df[df == 'not available in demo dataset'] = np.nan
     df[df == '(not set)'] = np.nan
+    df[df == '(not provided)'] = np.nan
 
     df['trafficSource.adwordsClickInfo.isVideoAd'].fillna(True, inplace=True)  # Variable only contains Falses
     df['trafficSource.isTrueDirect'].fillna(False, inplace=True)  # Variable only contains Trues
@@ -100,8 +102,11 @@ if __name__== "__main__":
 
     for c in geo_colnames:
         train_df[c] = train_df[c].cat.add_categories('N/A').fillna('N/A')
-        train_df[train_df[c] == "(not set)"] = 'N/A'
 
+    #%%
     train_geo_data = train_df[geo_colnames].copy()
 
     #%%
+    key_attributes = ['geoNetwork.city', 'geoNetwork.region', 'geoNetwork.country']
+    train_geo_data_enc = hotencode_variables(train_geo_data[key_attributes])
+

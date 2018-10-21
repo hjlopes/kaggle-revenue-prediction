@@ -79,12 +79,12 @@ def hotencode_variables(df, excluded_columns=[], nan_as_category=False):
     # Encode binary class with Label encoder
     categorical_features = [
         _f for _f in df.columns
-        if (_f not in excluded_columns) & (df[_f].dtype == 'object')
+        if (_f not in excluded_columns) & (df[_f].dtype in ['object', 'category'])
     ]
 
     label_enc = LabelEncoder()
     for column in categorical_features:
-        if df[column].dtype == 'object':
+        if df[column].dtype in ['object', 'category']:
             if len(df[column].unique().tolist()) <= 2:
                 print(column)
                 # df[column] = df[column].fillna('0')
