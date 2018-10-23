@@ -110,3 +110,16 @@ if __name__== "__main__":
     key_attributes = ['geoNetwork.city', 'geoNetwork.region', 'geoNetwork.country']
     train_geo_data_enc = hotencode_variables(train_geo_data[key_attributes])
 
+    #%%
+    # The target is the country, and city and region are used as training
+    # Train columns are those which do not contain 'country' in the column name
+    train_columns = train_geo_data_enc.columns[~train_geo_data_enc.columns.str.contains("country")]
+    target = train_geo_data['geoNetwork.country'].cat.codes
+    clf = RandomForestClassifier()
+    clf.fit(train_geo_data_enc[train_columns], target)
+
+    #%%
+    # Predict
+    pred = clf.predict(train_geo_data_enc[train_columns])
+    anomalies = pred != target
+
