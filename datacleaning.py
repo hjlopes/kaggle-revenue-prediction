@@ -113,13 +113,31 @@ if __name__== "__main__":
     #%%
     # The target is the country, and city and region are used as training
     # Train columns are those which do not contain 'country' in the column name
-    train_columns = train_geo_data_enc.columns[~train_geo_data_enc.columns.str.contains("country")]
+    country_columns = train_geo_data_enc.columns[~train_geo_data_enc.columns.str.contains("country")]
     target = train_geo_data['geoNetwork.country'].cat.codes
-    clf = RandomForestClassifier()
-    clf.fit(train_geo_data_enc[train_columns], target)
+    clf = RandomForestClassifier(n_jobs=3)
+    clf.fit(train_geo_data_enc[country_columns], target)
 
     #%%
     # Predict
-    pred = clf.predict(train_geo_data_enc[train_columns])
-    anomalies = pred != target
+    pred = clf.predict(train_geo_data_enc[country_columns])
+    is_anomaly = pred != target
+
+    #%%
+    anomaly_cases = train_geo_data[is_anomaly][(train_geo_data['geoNetwork.city'] != 'N/A') | (
+            train_geo_data['geoNetwork.region'] != 'N/A')][key_attributes]
+
+    # Peak at the prob of the anomaly cases
+    certainty = clf.predict_proba(train_geo_data_enc[country_columns])
+    uncertain_idx = np.max(certainty, axis=1) < 0.95
+    uncertain_samples = train_geo_data[key_attributes][uncertain_idx]
+    # uncertain_samples[(uncertain_samples['geoNetwork.city'] != 'N/A') & (uncertain_samples['geoNetwork.region'] != 'N/A')].groupby(key_attributes).size()
+    not_na_idx = (train_geo_data['geoNetwork.city'] != 'N/A') | (train_geo_data['geoNetwork.region'] != 'N/A')
+
+    target_corrected = pd.Categorical.from_codes(pred, train_geo_data['geoNetwork.country'].cat.categories)
+
+    # Set the fixed country column back to the original data
+    train_df.loc[not_na_idx, 'geoNetwork.country'] = target_corrected[not_na_idx]
+
+    data_to_pickle(train_df, "data/redu_geo_fix_train_df.pickle")
 
