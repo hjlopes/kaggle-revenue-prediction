@@ -2,6 +2,7 @@
 import gc
 import logging
 
+from datacleaning import load_csv
 from utils import data_to_pickle, load_pickle
 
 gc.enable()
@@ -12,17 +13,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import GroupKFold, KFold
-from sklearn.metrics import mean_squared_error
 
 from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import Imputer
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 
 
 import lightgbm as lgb
-
 
 def missing_values_table(df):
     # Total missing values
@@ -59,7 +55,7 @@ def df_show_value_types(df):
 def factorize_variables(df, excluded=[], cat_indexers=None):
     categorical_features = [
         _f for _f in df.columns
-        if (_f not in excluded) & (df[_f].dtype == 'object')
+        if (_f not in excluded) & (df[_f].dtype in ['object'])
     ]
     logger.info("Categorical features: {}".format(categorical_features))
 
@@ -73,28 +69,6 @@ def factorize_variables(df, excluded=[], cat_indexers=None):
             df[f] = cat_indexers[f].get_indexer(df[f])
 
     return df, cat_indexers, categorical_features
-
-
-def hotencode_variables(df, excluded_columns=[], nan_as_category=False):
-    # Encode binary class with Label encoder
-    categorical_features = [
-        _f for _f in df.columns
-        if (_f not in excluded_columns) & (df[_f].dtype in ['object', 'category'])
-    ]
-
-    label_enc = LabelEncoder()
-    for column in categorical_features:
-        if df[column].dtype in ['object', 'category']:
-            if len(df[column].unique().tolist()) <= 2:
-                print(column)
-                # df[column] = df[column].fillna('0')
-                label_enc.fit(df[column])
-                df[column] = label_enc.transform(df[column])
-                print("Enconded ", column)
-
-    # Encode multi-class with one Hot-encoder
-    df = pd.get_dummies(df, columns=categorical_features)
-    return df
 
 
 def align_train_test(train_df, test_df):
@@ -160,7 +134,7 @@ def generate_features(df):
     df['visit_date'] = pd.to_datetime(df['visitStartTime'], unit='s')
     df['sess_date_dow'] = df['visit_date'].dt.dayofweek
     df['sess_date_hours'] = df['visit_date'].dt.hour
-    df['sess_date_dom'] = df['visit_date'].dt.day
+    df['sess_date_day'] = df['visit_date'].dt.day
     df['sess_date_mon'] = df['visit_date'].dt.month
 
     # Add next session features
@@ -178,6 +152,11 @@ def generate_features(df):
     )
 
     df['ratio_pageviews'] = df['totals.pageviews'] / df['nb_pageviews']
+
+    df['totals_hits_norm'] = (df['totals.hits'] - min(df['totals.hits'])) / (max(df['totals.hits']) - min(df['totals.hits']))
+    df["totals_pageviews_norm"] = (df["totals.pageviews"] - min(df["totals.pageviews"])) / (
+                max(df["totals.pageviews"]) - min(df["totals.pageviews"]))
+
 
     # Add cumulative count for user
     df['dummy'] = 1
@@ -233,29 +212,7 @@ def feature_importance(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
-def stack_features(df, train_feats=None):
-    df_user_group = df.groupby('fullVisitorId').mean()
-    pred_list = df[['fullVisitorId', 'predictions']].groupby('fullVisitorId') \
-        .apply(lambda _df: list(_df.predictions)) \
-        .apply(lambda x: {'pred_' + str(i): pred for i, pred in enumerate(x)})
-    all_predictions = pd.DataFrame(list(pred_list.values), index=df_user_group.index)
-
-    if train_feats is not None:
-        for f in train_feats:
-            if f not in all_predictions.columns:
-                all_predictions[f] = np.nan
-
-    feats = all_predictions.columns
-    all_predictions['t_mean'] = np.log1p(all_predictions[feats].mean(axis=1))
-    all_predictions['t_median'] = np.log1p(all_predictions[feats].median(axis=1))
-    all_predictions['t_sum_log'] = np.log1p(all_predictions[feats]).sum(axis=1)
-    all_predictions['t_sum_act'] = np.log1p(all_predictions[feats].fillna(0).sum(axis=1))
-    all_predictions['t_nb_sess'] = all_predictions[feats].isnull().sum(axis=1)
-    full_data = pd.concat([df_user_group, all_predictions], axis=1)
-    return full_data, feats
-
-
-def train_session_level(train, test, y, excluded):
+def train_full(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
 
     train_features = [_f for _f in train.columns if _f not in excluded]
@@ -264,42 +221,49 @@ def train_session_level(train, test, y, excluded):
     importances = pd.DataFrame()
     oof_reg_preds = np.zeros(train.shape[0])
     sub_reg_preds = np.zeros(test.shape[0])
+
+    model = lgb.LGBMRegressor(
+        num_leaves=1024,
+        learning_rate=0.03,
+        n_estimators=20000,
+        subsample=.9,
+        colsample_bytree=.9,
+        random_state=1
+    )
+
     for fold_, (trn_, val_) in enumerate(folds):
         trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
         val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
 
-        reg = lgb.LGBMRegressor(
-            num_leaves=31,
-            learning_rate=0.03,
-            n_estimators=1000,
-            subsample=.9,
-            colsample_bytree=.9,
-            random_state=1
+        model.fit(
+            trn_x, trn_y,
+            eval_set=[(val_x, val_y)],
+            eval_names=['TRAIN', 'VALID'],
+            early_stopping_rounds=100,
+            verbose=500,
+            eval_metric='rmse',
         )
-        reg.fit(
-            trn_x, np.log1p(trn_y),
-            eval_set=[(val_x, np.log1p(val_y))],
-            early_stopping_rounds=50,
-            verbose=100,
-            eval_metric='rmse'
-        )
+
         imp_df = pd.DataFrame()
         imp_df['feature'] = train_features
-        imp_df['gain'] = reg.booster_.feature_importance(importance_type='gain')
+        imp_df['gain'] = model.booster_.feature_importance(importance_type='gain')
 
         imp_df['fold'] = fold_ + 1
         importances = pd.concat([importances, imp_df], axis=0, sort=False)
 
-        oof_reg_preds[val_] = reg.predict(val_x, num_iteration=reg.best_iteration_)
+        oof_reg_preds[val_] = model.predict(val_x, num_iteration=model.best_iteration_)
         oof_reg_preds[oof_reg_preds < 0] = 0
-        _preds = reg.predict(test[train_features], num_iteration=reg.best_iteration_)
+        _preds = model.predict(test[train_features], num_iteration=model.best_iteration_)
         _preds[_preds < 0] = 0
-        sub_reg_preds += np.expm1(_preds) / len(folds)
+        sub_reg_preds += _preds/len(folds)
 
+    _, ax = plt.subplots(1, 1, figsize=(12, 12))
+    feat_plt = lgb.plot_importance(model,ax=ax, max_num_features=50)
+    feat_plt.get_figure().savefig("feature_importance.png")
+    mean_squared_error(y, oof_reg_preds) ** .5
     feature_importance(importances, filename="session_feat_importance.png")
-    mean_squared_error(np.log1p(y), oof_reg_preds) ** .5
 
-    return np.expm1(oof_reg_preds), sub_reg_preds
+    return oof_reg_preds, sub_reg_preds
 
 
 def train_visit_level(full_data, test_full_data, y):
@@ -350,6 +314,7 @@ def train_visit_level(full_data, test_full_data, y):
     test_full_df['PredictedLogRevenue'] = sub_preds
     test_full_df[['PredictedLogRevenue']].to_csv("multi_lvl_lgb.csv", index=True)
 
+"""
 
 def train_user_level(train, test, y):
     try:
@@ -412,23 +377,38 @@ def train_user_level(train, test, y):
         plt.savefig('distributions.png')
 
     except Exception as err:
+
         logger.exception("Unexpected error")
+"""
+
+
+def generate_submission_file(test_ids, prediction, filename):
+    test = pd.DataFrame(test_ids)
+    test['predictedLogRevenue'] = prediction
+    submission = test.groupby('fullVisitorId').agg({'predictedLogRevenue': 'sum'}).reset_index()
+    submission['predictedLogRevenue'] = np.log1p(submission['predictedLogRevenue'])
+    submission.to_csv("{}.csv".format(filename), index=False)
+
 
 logger = get_logger()
 
 #%%
 if __name__ == "__main__":
-
     #%%
     # print(missing_values_table(train_df))
     # print(missing_values_table(test_df))
     # df_show_value_types(train_df)
     # df_show_value_types(test_df)
     # plot_transaction_revenue(train_df)
-
+    # train_path = "./data/train_v2.csv"
+    # test_path = "./data/test_v2.csv"
+    # train_df = load_csv(train_path, 200)
+    # test_df = load_csv(test_path, 200)
+    from datacleaning import main as main_datacleaning
+    main_datacleaning()
     #%%
     # Load reduced df
-    train_path = 'data/reduced_train_df.pickle'
+    train_path = 'data/redu_geo_fix_train_df.pickle'
     test_path = 'data/reduced_test_df.pickle'
     train_df = load_pickle(train_path)
     test_df = load_pickle(test_path)
@@ -439,16 +419,22 @@ if __name__ == "__main__":
 
     excluded_feat = [
         'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
-        'visitId', 'visitStartTime', 'nb_sessions', 'max_visits'
+        'visitId', 'visitStartTime',
     ]
-    # train_df = preprocess_missings(train_df)
-    # test_df = preprocess_missings(test_df)
+    #%%
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
 
     #%%
-    train_pred, test_pred = train_session_level(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+    import time
+    t = time.time()
+    train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
+    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    logger.info("PredictionTime: {}".format(time.time()-t))
 
+
+    """
     #$$
     train_df['predictions'] = train_pred
     test_df['predictions'] = test_pred
@@ -470,10 +456,6 @@ if __name__ == "__main__":
     test_full_df = load_pickle(stacked_test_path)
 
     #%%
-    train_users, target2 = generate_user_aggregate_features(train_df)
-    test_users, _ = generate_user_aggregate_features(test_df)
-
-    #%%
-    # train_user_level(train_users, test_users, target)
-    trn_visitor_target = train_df[['fullVisitorId', 'totals.transactionRevenue']].groupby('fullVisitorId').sum()
     train_visit_level(train_full_df, test_full_df, target)
+    """
+
