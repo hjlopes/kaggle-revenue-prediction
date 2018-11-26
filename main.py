@@ -405,7 +405,7 @@ if __name__ == "__main__":
     # train_df = load_csv(train_path, 200)
     # test_df = load_csv(test_path, 200)
     from datacleaning import main as main_datacleaning
-    main_datacleaning()
+    #main_datacleaning()
     #%%
     # Load reduced df
     # train_path = 'data/redu_geo_fix_train_df.pickle'
