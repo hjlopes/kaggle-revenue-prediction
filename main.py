@@ -216,8 +216,7 @@ def train_full(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
-              "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9,
-              "subsample_freq ": 10}
+              "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
 
     train_features = [_f for _f in train.columns if _f not in excluded]
     logger.info("Train features: {}".format(train_features))
