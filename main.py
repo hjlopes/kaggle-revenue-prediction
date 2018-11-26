@@ -215,6 +215,7 @@ def feature_importance(feat_importance, filename="distributions.png"):
 
 def train_full(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
+    # folds = KFold(n_splits=10, shuffle=False, random_state=42)
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
               "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
@@ -258,8 +259,8 @@ def train_full(train, test, y, excluded):
         _preds[_preds < 0] = 0
         sub_reg_preds += _preds/len(folds)
 
-    _, ax = plt.subplots(1, 1, figsize=(12, 12))
-    feat_plt = lgb.plot_importance(model,ax=ax, max_num_features=50)
+    _, ax = plt.subplots(1, 1, figsize=(22, 12))
+    feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
     feat_plt.get_figure().savefig("feature_importance.png")
     mean_squared_error(y, oof_reg_preds) ** .5
     feature_importance(importances, filename="session_feat_importance.png")
