@@ -408,7 +408,8 @@ if __name__ == "__main__":
     main_datacleaning()
     #%%
     # Load reduced df
-    train_path = 'data/redu_geo_fix_train_df.pickle'
+    # train_path = 'data/redu_geo_fix_train_df.pickle'
+    train_path = 'data/reduced_train_df.pickle'
     test_path = 'data/reduced_test_df.pickle'
     train_df = load_pickle(train_path)
     test_df = load_pickle(test_path)
