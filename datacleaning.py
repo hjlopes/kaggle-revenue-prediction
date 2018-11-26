@@ -66,9 +66,9 @@ def preprocess_features(df):
     if 'trafficSource.campaignCode' in df.columns:
         df.drop(columns=['trafficSource.campaignCode'], inplace=True)
 
-    if 'totals.transactionRevenue' in df.columns:
-        df['totals.transactionRevenue'].fillna(0, inplace=True)
-        df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype("float", copy=False)
+    if 'totals.totalTransactionRevenue' in df.columns:
+        df['totals.totalTransactionRevenue'].fillna(0, inplace=True)
+        df['totals.totalTransactionRevenue'] = df['totals.totalTransactionRevenue'].astype("float", copy=False)
 
     return df
 
