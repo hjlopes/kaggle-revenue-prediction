@@ -422,7 +422,7 @@ if __name__ == "__main__":
 
     excluded_feat = [
         'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
-        'visitId', 'visitStartTime',
+        'visitId', 'visitStartTime', 'totals.totalTransactionRevenue'
     ]
     #%%
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
