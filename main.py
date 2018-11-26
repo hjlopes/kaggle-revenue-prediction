@@ -120,11 +120,11 @@ def get_folds(df=None, n_splits=5):
 
 
 def plot_transaction_revenue(df):
-    df['totals.totalTransactionRevenue'] = df['totals.totalTransactionRevenue'].astype('float')
-    revenuebyuser = df.groupby('fullVisitorId')['totals.totalTransactionRevenue'].sum().reset_index()
+    df['totals.transactionRevenue'] = df['totals.transactionRevenue'].astype('float')
+    revenuebyuser = df.groupby('fullVisitorId')['totals.transactionRevenue'].sum().reset_index()
 
     plt.figure(figsize=(8, 6))
-    plt.scatter(range(revenuebyuser.shape[0]), np.sort(np.log1p(revenuebyuser['totals.totalTransactionRevenue'].values)))
+    plt.scatter(range(revenuebyuser.shape[0]), np.sort(np.log1p(revenuebyuser['totals.transactionRevenue'].values)))
     plt.xlabel('index')
     plt.ylabel('transactionRevenue')
     plt.show()
@@ -181,8 +181,8 @@ def generate_user_aggregate_features(df):
         'totals.bounces': ['sum', 'mean', 'median'],
         'totals.newVisits': ['sum', 'mean', 'median']
     }
-    if 'totals.totalTransactionRevenue' in df.columns:
-        aggs['totals.totalTransactionRevenue'] = ['sum']
+    if 'totals.transactionRevenue' in df.columns:
+        aggs['totals.transactionRevenue'] = ['sum']
 
     users = df.groupby('fullVisitorId').agg(aggs)
 
@@ -193,10 +193,10 @@ def generate_user_aggregate_features(df):
     users.columns = columns
     logger.info("Finished aggregations. New columns: {}".format(columns))
 
-    if 'totals.totalTransactionRevenue' in df.columns:
-        users['totals.totalTransactionRevenue_sum'] = np.log1p(users['totals.totalTransactionRevenue_sum'])
-        y = users['totals.totalTransactionRevenue_sum']
-        users.drop(['totals.totalTransactionRevenue_sum'], axis=1, inplace=True)
+    if 'totals.transactionRevenue' in df.columns:
+        users['totals.transactionRevenue_sum'] = np.log1p(users['totals.transactionRevenue_sum'])
+        y = users['totals.transactionRevenue_sum']
+        users.drop(['totals.transactionRevenue_sum'], axis=1, inplace=True)
     else:
         y = None
 
@@ -421,7 +421,7 @@ if __name__ == "__main__":
     generate_features(test_df)
 
     excluded_feat = [
-        'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.totalTransactionRevenue',
+        'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
         'visitId', 'visitStartTime',
     ]
     #%%
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     #%%
     import time
     t = time.time()
-    train_pred, test_pred = train_full(train_df, test_df, train_df['totals.totalTransactionRevenue'], excluded_feat)
+    train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
     logger.info("PredictionTime: {}".format(time.time()-t))
@@ -443,8 +443,8 @@ if __name__ == "__main__":
     test_df['predictions'] = test_pred
     train_full_df, feats = stack_features(train_df)
     test_full_df, _ = stack_features(test_df, train_feats=feats)
-    target = train_full_df['totals.totalTransactionRevenue']
-    train_full_df.drop(columns=['totals.totalTransactionRevenue'], inplace=True)
+    target = train_full_df['totals.transactionRevenue']
+    train_full_df.drop(columns=['totals.transactionRevenue'], inplace=True)
 
     #%%
     stacked_train_path = 'data/stacked_train_df.pickle'
