@@ -20,6 +20,7 @@ from sklearn.metrics import mean_squared_error
 
 import lightgbm as lgb
 
+
 def missing_values_table(df):
     # Total missing values
     mis_val = df.isnull().sum()
@@ -228,7 +229,7 @@ def train_full(train, test, y, excluded):
     model = lgb.LGBMRegressor(
         **params,
         n_estimators=20000,
-        n_jobs=1
+        n_jobs=-1
     )
 
     for fold_, (trn_, val_) in enumerate(folds):
