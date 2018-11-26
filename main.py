@@ -237,7 +237,7 @@ def train_full(train, test, y, excluded):
 
         model.fit(
             trn_x, trn_y,
-            eval_set=[(val_x, val_y)],
+            eval_set=[(trn_x, trn_y), (val_x, val_y)],
             eval_names=['TRAIN', 'VALID'],
             early_stopping_rounds=100,
             verbose=500,
