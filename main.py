@@ -214,6 +214,10 @@ def feature_importance(feat_importance, filename="distributions.png"):
 
 def train_full(train, test, y, excluded):
     folds = get_folds(df=train, n_splits=5)
+    params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
+              "reg_lambda": 0.1,
+              "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9,
+              "subsample_freq ": 10}
 
     train_features = [_f for _f in train.columns if _f not in excluded]
     logger.info("Train features: {}".format(train_features))
@@ -223,22 +227,19 @@ def train_full(train, test, y, excluded):
     sub_reg_preds = np.zeros(test.shape[0])
 
     model = lgb.LGBMRegressor(
-        num_leaves=1024,
-        learning_rate=0.03,
+        **params,
         n_estimators=20000,
-        subsample=.9,
-        colsample_bytree=.9,
-        random_state=1
+        n_jobs=1
     )
 
     for fold_, (trn_, val_) in enumerate(folds):
+        logger.info("Executing fold #{}".format(fold_))
         trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
         val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
 
         model.fit(
             trn_x, trn_y,
             eval_set=[(trn_x, trn_y), (val_x, val_y)],
-            eval_names=['TRAIN', 'VALID'],
             early_stopping_rounds=100,
             verbose=500,
             eval_metric='rmse',
