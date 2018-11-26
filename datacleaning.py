@@ -99,7 +99,7 @@ def load_csv(path, nrows=None):
     return df
 
 
-def data_clean_and_reduce(df, dataset_name='train'):
+def data_clean_and_reduce(df, dataset_name='train', geo_fix=False):
     #%%
     # Remove Columns with constant values
     const_cols = constant_columns(df)
@@ -111,7 +111,7 @@ def data_clean_and_reduce(df, dataset_name='train'):
     df.to_pickle(reduced_data_path)
     logger.info("Finished saving reduced {} pkl data".format(dataset_name))
 
-    if dataset_name == 'train':
+    if dataset_name == 'train' and geo_fix is True:
         # Geographic data cleaning
         # https://www.kaggle.com/mithrillion/fixing-conflicts-in-the-geonetwork-attributes
         geo_colnames = [c for c in df.columns if re.match(r'geoNetwork', c) is not None]
