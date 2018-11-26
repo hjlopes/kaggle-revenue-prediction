@@ -79,33 +79,36 @@ def constant_columns(df):
 
 
 def load_csv(path, nrows=None):
-    columns = ['device', 'geoNetwork', 'totals', 'trafficSource']
-
-    df = pd.read_csv(path,
-                     converters={column: json.loads for column in columns},
+    json_columns = ['device', 'geoNetwork', 'totals', 'trafficSource']
+    ignore_columns = ['hits']
+    chunk = pd.read_csv(path,
+                     converters={column: json.loads for column in json_columns},
                      dtype={'fullVisitorId': 'str'},
-                     nrows=nrows)
+                     nrows=nrows, chunksize=200000)
+    df = pd.DataFrame()
+    for idx, df_chunk in enumerate(chunk):
+        logger.info("Processing chunk #{}".format(idx))
+        df_chunk.reset_index(inplace=True)
+        for column in json_columns:
+            column_as_df = json_normalize(df_chunk[column])
+            column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
+            df_chunk = df_chunk.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
 
-    for column in columns:
-        column_as_df = json_normalize(df[column])
-        column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
-        df = df.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
+        df_chunk.drop(columns=ignore_columns, inplace=True)
+        df_chunk = preprocess_features(df_chunk)
+        if not df.empty:
+            df = pd.concat([df, df_chunk])
+        else:
+            df = df_chunk.copy()
+        del df_chunk
 
-    df.drop('hits', axis=1, inplace=True)
-
-    df = preprocess_features(df)
+    df.reset_index(inplace=True)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
-
     return df
 
 
-def data_clean_and_reduce(df, dataset_name='train', geo_fix=False):
+def data_clean_and_reduce(df, dataset_name='train', const_cols=None, geo_fix=False):
     #%%
-    # Remove Columns with constant values
-    const_cols = constant_columns(df)
-    df = df.drop(columns=const_cols)
-    gc.collect()
-
     # Dump data to pickles
     reduced_data_path = 'data/reduced_{}_df.pickle'.format(dataset_name)
     df.to_pickle(reduced_data_path)
@@ -176,10 +179,24 @@ def main():
     train_path = "./data/train_v2.csv"
     test_path = "./data/test_v2.csv"
     train_df = load_csv(train_path)
+    # Remove Columns with constant values
+    const_cols = constant_columns(train_df)
+    train_df.drop(columns=const_cols, inplace=True)
+    gc.collect()
+    #%%
+    # Dump data to pickles
+    reduced_data_path = 'data/reduced_{}_df.pickle'.format("train")
+    train_df.to_pickle(reduced_data_path)
+    logger.info("Finished saving reduced {} pkl data".format("train"))
+
     data_clean_and_reduce(train_df, dataset_name='train')
     del train_df
     test_df = load_csv(test_path)
-    data_clean_and_reduce(test_df, dataset_name='test')
+    test_df.drop(columns=const_cols, inplace=True)
+    reduced_data_path = 'data/reduced_{}_df.pickle'.format("test")
+    train_df.to_pickle(reduced_data_path)
+    logger.info("Finished saving reduced {} pkl data".format("test"))
+
     logger.info('Finished datacleaning')
 
 
