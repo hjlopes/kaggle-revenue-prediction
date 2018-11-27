@@ -425,7 +425,7 @@ def train_user_level(train, test, y):
 """
 
 
-def train_test(train, test):
+def train_test(train, test, y):
     params = {"objective" : "regression", "metric" : "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1, "reg_lambda": 0.1,
             "num_leaves" : 1024, "learning_rate" : 0.01, "subsample" : 0.9, "colsample_bytree" : 0.9, "subsample_freq ": 10}
     n_fold = 10
@@ -434,10 +434,6 @@ def train_test(train, test):
     model = lgb.LGBMRegressor(**params, n_estimators = 20000, nthread = 4, n_jobs = -1)
 
     prediction = np.zeros(test.shape[0])
-    y = train['totals.transactionRevenue']
-    del train['totals.transactionRevenue']
-    test_y = test['totals.transactionRevenue']
-    del test['totals.transactionRevenue']
 
     for fold_n, (train_index, test_index) in enumerate(folds.split(train)):
         print('Fold:', fold_n)
@@ -509,7 +505,7 @@ if __name__ == "__main__":
     t = time.time()
     train_features = [_f for _f in train_df.columns if _f not in excluded_feat]
     # train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
-    test_pred = train_test(train_df[train_features], test_df[train_features])
+    test_pred = train_test(train_df[train_features], test_df[train_features], train_df['totals.transactionRevenue'])
 
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
     # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
