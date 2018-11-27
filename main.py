@@ -197,8 +197,9 @@ def feature_importance(feat_importance, filename="distributions.png"):
 
 
 def train_full(train, test, y, excluded):
-    folds = get_folds(df=train, n_splits=5)
-    # folds = KFold(n_splits=10, shuffle=False, random_state=42)
+    # folds = get_folds(df=train, n_splits=5)
+    folds = KFold(n_splits=10, shuffle=False, random_state=42)
+
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
               "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
@@ -216,7 +217,7 @@ def train_full(train, test, y, excluded):
         n_jobs=-1
     )
 
-    for fold_, (trn_, val_) in enumerate(folds):
+    for fold_, (trn_, val_) in enumerate(folds.split(train_df)):
         logger.info("Executing fold #{}".format(fold_))
         trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
         val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
