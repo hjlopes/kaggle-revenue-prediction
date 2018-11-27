@@ -115,12 +115,70 @@ def plot_transaction_revenue(df):
 
 def generate_features(df):
     # Add date features
-    df['visit_date'] = pd.to_datetime(df['visitStartTime'], unit='s')
-    df['sess_date_dow'] = df['visit_date'].dt.dayofweek
-    df['sess_date_hours'] = df['visit_date'].dt.hour
-    df['sess_date_day'] = df['visit_date'].dt.day
-    df['sess_date_mon'] = df['visit_date'].dt.month
+    df['month'] = df['date'].dt.month
+    df['day'] = df['date'].dt.day
+    df['weekday'] = df['date'].dt.weekday
+    df['weekofyear'] = df['date'].dt.weekofyear
 
+    df['month_unique_user_count'] = df.groupby('month')['fullVisitorId'].transform('nunique')
+    df['day_unique_user_count'] = df.groupby('day')['fullVisitorId'].transform('nunique')
+    df['weekday_unique_user_count'] = df.groupby('weekday')['fullVisitorId'].transform('nunique')
+    df['weekofyear_unique_user_count'] = df.groupby('weekofyear')['fullVisitorId'].transform('nunique')
+
+    # device based
+    df['browser_category'] = df['device.browser'] + '_' + df['device.deviceCategory']
+    df['browser_operatingSystem'] = df['device.browser'] + '_' + df['device.operatingSystem']
+
+    df['visitNumber'] = np.log1p(df['visitNumber'])
+    df['totals.hits'] = np.log1p(df['totals.hits'])
+    df['totals.pageviews'] = np.log1p(df['totals.pageviews'].fillna(0))
+
+    df['sum_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.pageviews'].transform(
+        'sum')
+    df['count_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')[
+        'totals.pageviews'].transform('count')
+    df['mean_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')[
+        'totals.pageviews'].transform('mean')
+    df['sum_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('sum')
+    df['count_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('count')
+    df['mean_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('mean')
+
+    df['mean_hits_per_day'] = df.groupby(['day'])['totals.hits'].transform('mean')
+    df['sum_hits_per_day'] = df.groupby(['day'])['totals.hits'].transform('sum')
+
+    df['sum_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.pageviews'].transform(
+        'sum')
+    df['count_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')[
+        'totals.pageviews'].transform('count')
+    df['mean_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')[
+        'totals.pageviews'].transform('mean')
+
+    df['sum_pageviews_per_region'] = df.groupby('geoNetwork.region')['totals.pageviews'].transform('sum')
+    df['count_pageviews_per_region'] = df.groupby('geoNetwork.region')['totals.pageviews'].transform('count')
+    df['mean_pageviews_per_region'] = df.groupby('geoNetwork.region')['totals.pageviews'].transform('mean')
+
+    df['sum_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('sum')
+    df['count_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('count')
+    df['mean_hits_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.hits'].transform('mean')
+
+    df['sum_hits_per_region'] = df.groupby('geoNetwork.region')['totals.hits'].transform('sum')
+    df['count_hits_per_region'] = df.groupby('geoNetwork.region')['totals.hits'].transform('count')
+    df['mean_hits_per_region'] = df.groupby('geoNetwork.region')['totals.hits'].transform('mean')
+
+    df['sum_hits_per_country'] = df.groupby('geoNetwork.country')['totals.hits'].transform('sum')
+    df['count_hits_per_country'] = df.groupby('geoNetwork.country')['totals.hits'].transform('count')
+    df['mean_hits_per_country'] = df.groupby('geoNetwork.country')['totals.hits'].transform('mean')
+
+    df['user_pageviews_sum'] = df.groupby('fullVisitorId')['totals.pageviews'].transform('sum')
+    df['user_hits_sum'] = df.groupby('fullVisitorId')['totals.hits'].transform('sum')
+    df['user_pageviews_count'] = df.groupby('fullVisitorId')['totals.pageviews'].transform('count')
+    df['user_hits_count'] = df.groupby('fullVisitorId')['totals.hits'].transform('count')
+    df['user_pageviews_sum_to_mean'] = df['user_pageviews_sum'] / df['user_pageviews_sum'].mean()
+    df['user_hits_sum_to_mean'] = df['user_hits_sum'] / df['user_hits_sum'].mean()
+
+    df['user_pageviews_to_region'] = df['user_pageviews_sum'] / df['mean_pageviews_per_region']
+    df['user_hits_to_region'] = df['user_hits_sum'] / df['mean_hits_per_region']
+    """
     # Add next session features
     df.sort_values(['fullVisitorId', 'visit_date'], ascending=True, inplace=True)
     df['next_session_1'] = (
@@ -141,6 +199,7 @@ def generate_features(df):
     df["totals_pageviews_norm"] = (df["totals.pageviews"] - min(df["totals.pageviews"])) / (
                 max(df["totals.pageviews"]) - min(df["totals.pageviews"]))
 
+    """
 
     # Add cumulative count for user
     df['dummy'] = 1
