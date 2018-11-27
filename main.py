@@ -425,6 +425,37 @@ def train_user_level(train, test, y):
 """
 
 
+def train_test(train, test):
+    params = {"objective" : "regression", "metric" : "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1, "reg_lambda": 0.1,
+            "num_leaves" : 1024, "learning_rate" : 0.01, "subsample" : 0.9, "colsample_bytree" : 0.9, "subsample_freq ": 10}
+    n_fold = 10
+    folds = KFold(n_splits=n_fold, shuffle=False, random_state=42)
+    # Cleaning and defining parameters for LGBM
+    model = lgb.LGBMRegressor(**params, n_estimators = 20000, nthread = 4, n_jobs = -1)
+
+    prediction = np.zeros(test.shape[0])
+    y = train['totals.transactionRevenue']
+    del train['totals.transactionRevenue']
+    test_y = test['totals.transactionRevenue']
+    del test['totals.transactionRevenue']
+
+    for fold_n, (train_index, test_index) in enumerate(folds.split(train)):
+        print('Fold:', fold_n)
+        # print(f'Train samples: {len(train_index)}. Valid samples: {len(test_index)}')
+        X_train, X_valid = train.iloc[train_index], train.iloc[test_index]
+        y_train, y_valid = y.iloc[train_index], y.iloc[test_index]
+
+        model.fit(X_train, y_train,
+                  eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
+                  verbose=500, early_stopping_rounds=100)
+
+        y_pred = model.predict(test, num_iteration=model.best_iteration_)
+        prediction += y_pred
+    prediction /= n_fold
+
+    return prediction
+
+
 def generate_submission_file(test_ids, prediction, filename):
     test = pd.DataFrame(test_ids)
     test['predictedLogRevenue'] = prediction
@@ -465,9 +496,10 @@ if __name__ == "__main__":
     generate_features(test_df)
 
     excluded_feat = [
-        'visit_date', 'date', 'fullVisitorId', 'sessionId', 'totals.transactionRevenue',
-        'visitId', 'visitStartTime', 'totals.totalTransactionRevenue'
+        'visit_date', 'date', 'fullVisitorId', 'sessionId',  'visitId', 'visitStartTime',
+        'totals.transactionRevenue',  'totals.totalTransactionRevenue', 'trafficSource.referralPath',
     ]
+
     #%%
     train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
     test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
@@ -475,9 +507,12 @@ if __name__ == "__main__":
     #%%
     import time
     t = time.time()
-    train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+    train_features = [_f for _f in train_df.columns if _f not in excluded_feat]
+    # train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
+    test_pred = train_test(train_df[train_features], test_df[train_features])
+
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
-    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
     logger.info("PredictionTime: {}".format(time.time()-t))
 
 
