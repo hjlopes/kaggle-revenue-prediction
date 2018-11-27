@@ -436,7 +436,7 @@ def generate_submission_file(test_ids, prediction, filename):
     submission.to_csv("{}.csv".format(filename), index=False)
 
 
-logger = get_logger()
+logger = get_logger(__name__)
 
 #%%
 if __name__ == "__main__":
@@ -456,9 +456,10 @@ if __name__ == "__main__":
     # Load reduced df
     # train_path = 'data/redu_geo_fix_train_df.pickle'
     train_path = 'data/reduced_train_df.pickle'
-    test_path = 'data/reduced_test_df.pickle'
     train_df = load_pickle(train_path)
     logger.info("Loaded train with shape {}".format(train_df.shape))
+
+    test_path = 'data/reduced_test_df.pickle'
     test_df = load_pickle(test_path)
     logger.info("Loaded test with shape {}".format(test_df.shape))
 

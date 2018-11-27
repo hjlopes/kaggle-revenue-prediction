@@ -12,10 +12,11 @@ def load_pickle(filename):
         data = pickle.load(f)
     return data
 
-def get_logger():
-    logger_ = logging.getLogger('main')
+
+def get_logger(name):
+    logger_ = logging.getLogger(name)
     logger_.setLevel(logging.DEBUG)
-    fh = logging.FileHandler('simple_lightgbm.log')
+    fh = logging.FileHandler('train_revenue_prediction.log')
     fh.setLevel(logging.DEBUG)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)

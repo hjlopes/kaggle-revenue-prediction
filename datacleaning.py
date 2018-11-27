@@ -2,23 +2,18 @@ import gc
 import json
 import re
 import os
-import logging
-import sys
+from utils import get_logger
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 from sklearn.preprocessing import LabelEncoder
 
 gc.enable()
 
-from utils import *
-
 import pandas as pd
 import numpy as np
 from pandas.io.json import json_normalize
 
-import random
 
 from sklearn.ensemble import RandomForestClassifier
 
