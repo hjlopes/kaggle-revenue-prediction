@@ -89,24 +89,22 @@ def load_csv(path, nrows=None):
     chunk = pd.read_csv(path,
                      converters={column: json.loads for column in json_columns},
                      dtype={'fullVisitorId': 'str'},
-                     nrows=nrows, chunksize=200000)
+                     nrows=nrows, chunksize=5000)
 
     for idx, df_chunk in enumerate(chunk):
         logger.info("Processing chunk #{}".format(idx))
-        # df_chunk.reset_index(drop=True, inplace=True)
+
+        # Unpack JSON  columns
         for column in json_columns:
             column_as_df = json_normalize(df_chunk[column])
             column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
             df_chunk = df_chunk.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
 
-        df_chunk.drop(columns=ignore_columns, inplace=True)
+        df_chunk.drop(columns=ignore_columns, inplace=True)  # Drop unused columns
 
-        if not df.empty:
-            df = pd.concat([df, df_chunk])
-        else:
-            df = df_chunk.copy()
-        del df_chunk
-        df.head()
+        df = pd.concat([df, df_chunk])  # Merge the chunk with the master DF
+
+        del df_chunk  # Memory save
 
     df.reset_index(inplace=True)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
