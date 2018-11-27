@@ -89,7 +89,7 @@ def load_csv(path, nrows=None):
     chunk = pd.read_csv(path,
                      converters={column: json.loads for column in json_columns},
                      dtype={'fullVisitorId': 'str'},
-                     nrows=nrows, chunksize=5000)
+                     nrows=nrows, chunksize=200000)
 
     for idx, df_chunk in enumerate(chunk):
         logger.info("Processing chunk #{}".format(idx))
