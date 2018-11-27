@@ -73,7 +73,7 @@ def constant_columns(df):
     return const_columns
 
 
-def load_csv(path, nrows=None):
+def load_csv(path, nrows=None, load_all=True):
     json_columns = ['device', 'geoNetwork', 'totals', 'trafficSource']
     ignore_columns = ['hits']
 
@@ -84,7 +84,7 @@ def load_csv(path, nrows=None):
     chunk = pd.read_csv(path,
                      converters={column: json.loads for column in json_columns},
                      dtype={'fullVisitorId': 'str'},
-                     nrows=nrows, chunksize=200000)
+                     nrows=nrows, chunksize=250000)
 
     for idx, df_chunk in enumerate(chunk):
         logger.info("Processing chunk #{}".format(idx))
@@ -101,6 +101,8 @@ def load_csv(path, nrows=None):
         df = pd.concat([df, df_chunk], axis=0, ignore_index=True, sort=True)  # Merge the chunk with the master DF
 
         del df_chunk  # Memory save
+        if not load_all:
+            break
 
     df.reset_index(drop=True, inplace=True)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
@@ -178,7 +180,7 @@ def main():
     # Load initial data
     train_path = "./data/train_v2.csv"
     test_path = "./data/test_v2.csv"
-    train_df = load_csv(train_path)
+    train_df = load_csv(train_path, load_all=False)
     train_df = preprocess_features(train_df)
 
     # Remove Columns with constant values

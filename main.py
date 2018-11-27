@@ -427,11 +427,11 @@ def train_user_level(train, test, y):
 
 def train_test(train, test, y):
     params = {"objective" : "regression", "metric" : "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1, "reg_lambda": 0.1,
-            "num_leaves" : 1024, "learning_rate" : 0.01, "subsample" : 0.9, "colsample_bytree" : 0.9, "subsample_freq ": 10}
+            "num_leaves" : 1024, "learning_rate" : 0.01, "subsample" : 0.9, "colsample_bytree" : 0.9}
     n_fold = 10
     folds = KFold(n_splits=n_fold, shuffle=False, random_state=42)
     # Cleaning and defining parameters for LGBM
-    model = lgb.LGBMRegressor(**params, n_estimators = 20000, nthread = 4, n_jobs = -1)
+    model = lgb.LGBMRegressor(**params, n_estimators = 20000, n_jobs = -1)
 
     prediction = np.zeros(test.shape[0])
 
