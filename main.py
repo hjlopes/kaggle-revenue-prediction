@@ -115,6 +115,7 @@ def plot_transaction_revenue(df):
 
 def generate_features(df):
     # Add date features
+    df['date'] = pd.to_datetime(df['date'], unit='s')
     df['month'] = df['date'].dt.month
     df['day'] = df['date'].dt.day
     df['weekday'] = df['date'].dt.weekday
