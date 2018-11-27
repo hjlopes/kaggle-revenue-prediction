@@ -95,14 +95,15 @@ def load_csv(path, nrows=None):
         logger.info("Processing chunk #{}".format(idx))
 
         # Unpack JSON  columns
+        df_chunk.reset_index(drop=True, inplace=True)
         for column in json_columns:
             column_as_df = json_normalize(df_chunk[column])
             column_as_df.columns = [f"{column}.{subcolumn}" for subcolumn in column_as_df.columns]
             df_chunk = df_chunk.drop(column, axis=1).merge(column_as_df, right_index=True, left_index=True)
 
-        df_chunk.drop(columns=ignore_columns, inplace=True)  # Drop unused columns
+        df_chunk.drop(columns=ignore_columns, inplace=True, errors='ignore')  # Drop unused columns
 
-        df = pd.concat([df, df_chunk], ignore_index=True)  # Merge the chunk with the master DF
+        df = pd.concat([df, df_chunk], axis=0, ignore_index=True, sort=True)  # Merge the chunk with the master DF
 
         del df_chunk  # Memory save
 
@@ -180,8 +181,8 @@ def data_clean_and_reduce(df, dataset_name='train', geo_fix=False):
 
 def main():
     # Load initial data
-    train_path = "./data/train_v2.csv"
-    test_path = "./data/test_v2.csv"
+    train_path = "./data/train.csv"
+    test_path = "./data/test.csv"
     train_df = load_csv(train_path)
     train_df = preprocess_features(train_df)
 
