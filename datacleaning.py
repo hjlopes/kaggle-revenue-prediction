@@ -102,7 +102,7 @@ def load_csv(path, nrows=None):
 
         df_chunk.drop(columns=ignore_columns, inplace=True)  # Drop unused columns
 
-        df = pd.concat([df, df_chunk])  # Merge the chunk with the master DF
+        df = pd.concat([df, df_chunk], ignore_index=True)  # Merge the chunk with the master DF
 
         del df_chunk  # Memory save
 
