@@ -126,12 +126,14 @@ def generate_features(df):
     df['weekofyear_unique_user_count'] = df.groupby('weekofyear')['fullVisitorId'].transform('nunique')
 
     # device based
+
     df['browser_category'] = df['device.browser'] + '_' + df['device.deviceCategory']
     df['browser_operatingSystem'] = df['device.browser'] + '_' + df['device.operatingSystem']
 
     df['visitNumber'] = np.log1p(df['visitNumber'].astype(float))
     df['totals.hits'] = np.log1p(df['totals.hits'])
-    df['totals.pageviews'] = np.log1p(df['totals.pageviews'].fillna(0))
+
+    df['totals.pageviews'] = np.log1p(df['totals.pageviews'].astype(float).fillna(0))
 
     df['sum_pageviews_per_network_domain'] = df.groupby('geoNetwork.networkDomain')['totals.pageviews'].transform(
         'sum')
@@ -171,35 +173,15 @@ def generate_features(df):
 
     df['user_pageviews_sum'] = df.groupby('fullVisitorId')['totals.pageviews'].transform('sum')
     df['user_hits_sum'] = df.groupby('fullVisitorId')['totals.hits'].transform('sum')
+
     df['user_pageviews_count'] = df.groupby('fullVisitorId')['totals.pageviews'].transform('count')
     df['user_hits_count'] = df.groupby('fullVisitorId')['totals.hits'].transform('count')
+
     df['user_pageviews_sum_to_mean'] = df['user_pageviews_sum'] / df['user_pageviews_sum'].mean()
     df['user_hits_sum_to_mean'] = df['user_hits_sum'] / df['user_hits_sum'].mean()
 
     df['user_pageviews_to_region'] = df['user_pageviews_sum'] / df['mean_pageviews_per_region']
     df['user_hits_to_region'] = df['user_hits_sum'] / df['mean_hits_per_region']
-    """
-    # Add next session features
-    df.sort_values(['fullVisitorId', 'visit_date'], ascending=True, inplace=True)
-    df['next_session_1'] = (
-       df['visit_date'] - df[['fullVisitorId', 'visit_date']].groupby('fullVisitorId')[
-                               'visit_date'].shift(1)
-                           ).astype(np.int64) // 1e9 // 60 // 60
-    df['next_session_2'] = (
-        df['visit_date'] - df[['fullVisitorId', 'visit_date']].groupby('fullVisitorId')[
-                               'visit_date'].shift(-1)
-                           ).astype(np.int64) // 1e9 // 60 // 60
-    df['nb_pageviews'] = df['visit_date'].map(
-        df[['visit_date', 'totals.pageviews']].groupby('visit_date')['totals.pageviews'].sum()
-    )
-
-    df['ratio_pageviews'] = df['totals.pageviews'] / df['nb_pageviews']
-
-    df['totals_hits_norm'] = (df['totals.hits'] - min(df['totals.hits'])) / (max(df['totals.hits']) - min(df['totals.hits']))
-    df["totals_pageviews_norm"] = (df["totals.pageviews"] - min(df["totals.pageviews"])) / (
-                max(df["totals.pageviews"]) - min(df["totals.pageviews"]))
-
-    """
 
     # Add cumulative count for user
     # df['dummy'] = 1
@@ -486,35 +468,50 @@ if __name__ == "__main__":
     test_path = 'data/reduced_test_df.pickle'
     test_df = load_pickle(test_path)
     logger.info("Loaded test with shape {}".format(test_df.shape))
-    target = train_df['totals.transactionRevenue']
 
     #%%
     generate_features(train_df)
     generate_features(test_df)
 
+    num_cols = ['visitNumber', 'totals.timeOnSite', 'totals.hits', 'totals.pageviews', 'month_unique_user_count',
+                'day_unique_user_count', 'mean_hits_per_day'
+                                         'sum_pageviews_per_network_domain', 'sum_hits_per_network_domain',
+                'count_hits_per_network_domain', 'sum_hits_per_region',
+                'sum_hits_per_day', 'count_pageviews_per_network_domain', 'mean_pageviews_per_network_domain',
+                'weekday_unique_user_count',
+                'sum_pageviews_per_region', 'count_pageviews_per_region', 'mean_pageviews_per_region',
+                'user_pageviews_count', 'user_hits_count',
+                'count_hits_per_region', 'mean_hits_per_region', 'user_pageviews_sum', 'user_hits_sum',
+                'user_pageviews_sum_to_mean',
+                'user_hits_sum_to_mean', 'user_pageviews_to_region', 'user_hits_to_region',
+                'mean_pageviews_per_network_domain',
+                'mean_hits_per_network_domain']
 
-    excluded_feat = [
-        'visit_date', 'date', 'fullVisitorId', 'sessionId',  'visitId', 'visitStartTime',
-        'totals.transactionRevenue',  'totals.totalTransactionRevenue', 'trafficSource.referralPath',
-        'visitNumber',  'customDimensions',
-    ]
+    no_use = ["visitNumber", "date", "fullVisitorId", "sessionId", "visitId", "visitStartTime",
+              'totals.transactionRevenue', 'trafficSource.referralPath']
+    cat_cols = [col for col in train_df.columns if col not in num_cols and col not in no_use]
 
-    #%%
-    train_df, cat_indexers, cat_feat = factorize_variables(train_df, excluded=excluded_feat)
-    test_df, _, _ = factorize_variables(test_df, cat_indexers=cat_indexers, excluded=excluded_feat)
+    for col in cat_cols:
+        if col != 'trafficSource.campaignCode':
+            print(col)
+            lbl = LabelEncoder()
+            lbl.fit(list(train_df[col].values.astype('str')) + list(test_df[col].values.astype('str')))
+            train_df[col] = lbl.transform(list(train_df[col].values.astype('str')))
+            test_df[col] = lbl.transform(list(test_df[col].values.astype('str')))
+
+    no_use.append('trafficSource.campaignCode')
 
     #%%
     import time
     t = time.time()
-    train_features = [_f for _f in train_df.columns if _f not in excluded_feat]
-    # no_use.append('trafficSource.campaignCode')
+    train_features = [_f for _f in train_df.columns if _f not in no_use]
     train_df = train_df.sort_values('date')
     # X = train.drop([col for col in no_use if col in train.columns], axis=1)
     # y = train['totals.transactionRevenue']
     # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
-    target = np.log1p(target)
-    train_pred, test_pred = train_full(train_df, test_df, target, excluded_feat)
-    # test_pred = train_test(train_df[train_features], test_df[train_features], target)
+    target = np.log1p(train_df['totals.transactionRevenue'])
+    # train_pred, test_pred = train_full(train_df, test_df, target, excluded_feat)
+    test_pred = train_test(train_df[train_features], test_df[train_features], target)
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
     # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
     logger.info("PredictionTime: {}".format(time.time()-t))
