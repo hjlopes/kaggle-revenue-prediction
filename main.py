@@ -256,7 +256,7 @@ def feature_importance(feat_importance, filename="distributions.png"):
 
 
 def train_full(train, test, y, excluded):
-    n_folds = 10
+    n_folds = 5
     # folds = get_folds(df=train, n_splits=n_folds)
     folds = KFold(n_splits=n_folds, shuffle=False, random_state=42)
 
