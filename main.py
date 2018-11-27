@@ -1,9 +1,8 @@
 #%%
 import gc
-import logging
 
 from datacleaning import load_csv
-from utils import data_to_pickle, load_pickle
+from utils import data_to_pickle, load_pickle, get_logger
 
 gc.enable()
 
@@ -75,22 +74,6 @@ def factorize_variables(df, excluded=[], cat_indexers=None):
 def align_train_test(train_df, test_df):
     return train_df.align(test_df, join='inner', axis=1)
 
-
-def get_logger():
-    logger_ = logging.getLogger('main')
-    logger_.setLevel(logging.DEBUG)
-    fh = logging.FileHandler('simple_lightgbm.log')
-    fh.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(levelname)s]%(asctime)s:%(name)s:%(message)s')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger_.addHandler(fh)
-    logger_.addHandler(ch)
-
-    return logger_
 
 
 ### Particular dataset functions
@@ -229,7 +212,7 @@ def train_full(train, test, y, excluded):
 
     model = lgb.LGBMRegressor(
         **params,
-        n_estimators=20000,
+        n_estimators=5000,
         n_jobs=-1
     )
 
@@ -414,7 +397,9 @@ if __name__ == "__main__":
     train_path = 'data/reduced_train_df.pickle'
     test_path = 'data/reduced_test_df.pickle'
     train_df = load_pickle(train_path)
+    logger.info("Loaded train with shape {}".format(train_df.shape))
     test_df = load_pickle(test_path)
+    logger.info("Loaded test with shape {}".format(test_df.shape))
 
     #%%
     generate_features(train_df)
