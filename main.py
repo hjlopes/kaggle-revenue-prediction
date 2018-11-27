@@ -53,7 +53,6 @@ def factorize_variables(df, excluded=[], cat_indexers=None):
         _f for _f in df.columns
         if (_f not in excluded) & (df[_f].dtype in ['object'])
     ]
-    logger.info("Categorical features: {}".format(categorical_features))
 
     if cat_indexers is None:
         cat_indexers = {}
@@ -62,6 +61,7 @@ def factorize_variables(df, excluded=[], cat_indexers=None):
             cat_indexers[f] = indexer
     else:
         for f in categorical_features:
+            logger.info("Factorizing categorical: {}".format(f))
             df[f] = cat_indexers[f].get_indexer(df[f])
 
     return df, cat_indexers, categorical_features
@@ -116,6 +116,9 @@ def generate_features(df):
     df['day'] = df['date'].dt.day
     df['weekday'] = df['date'].dt.weekday
     df['weekofyear'] = df['date'].dt.weekofyear
+
+    df['totals.timeOnSite'].fillna(0, inplace=True)
+    df['totals.timeOnSite'] = df['totals.timeOnSite'].astype(float)
 
     df['month_unique_user_count'] = df.groupby('month')['fullVisitorId'].transform('nunique')
     df['day_unique_user_count'] = df.groupby('day')['fullVisitorId'].transform('nunique')
@@ -254,8 +257,8 @@ def feature_importance(feat_importance, filename="distributions.png"):
 
 def train_full(train, test, y, excluded):
     n_folds = 5
-    # folds = get_folds(df=train, n_splits=n_folds)
-    folds = KFold(n_splits=n_folds, shuffle=False, random_state=42)
+    folds = get_folds(df=train, n_splits=n_folds)
+    # folds = KFold(n_splits=n_folds, shuffle=False, random_state=42)
 
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
@@ -274,7 +277,7 @@ def train_full(train, test, y, excluded):
         n_jobs=-1
     )
 
-    for fold_, (trn_, val_) in enumerate(folds.split(train_df)):
+    for fold_, (trn_, val_) in enumerate(folds):
         logger.info("Executing fold #{}".format(fold_))
         trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
         val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
@@ -470,13 +473,10 @@ if __name__ == "__main__":
     # df_show_value_types(train_df)
     # df_show_value_types(test_df)
     # plot_transaction_revenue(train_df)
-    # train_path = "./data/train_v2.csv"
-    # test_path = "./data/test_v2.csv"
-    # train_df = load_csv(train_path, 200)
-    # test_df = load_csv(test_path, 200)
+
     from datacleaning import main as main_datacleaning
-    #main_datacleaning()
-    #%%
+    # main_datacleaning()
+
     # Load reduced df
     # train_path = 'data/redu_geo_fix_train_df.pickle'
     train_path = 'data/reduced_train_df.pickle'
@@ -486,14 +486,17 @@ if __name__ == "__main__":
     test_path = 'data/reduced_test_df.pickle'
     test_df = load_pickle(test_path)
     logger.info("Loaded test with shape {}".format(test_df.shape))
+    target = train_df['totals.transactionRevenue']
 
     #%%
     generate_features(train_df)
     generate_features(test_df)
 
+
     excluded_feat = [
         'visit_date', 'date', 'fullVisitorId', 'sessionId',  'visitId', 'visitStartTime',
         'totals.transactionRevenue',  'totals.totalTransactionRevenue', 'trafficSource.referralPath',
+        'visitNumber',  'customDimensions',
     ]
 
     #%%
@@ -504,11 +507,16 @@ if __name__ == "__main__":
     import time
     t = time.time()
     train_features = [_f for _f in train_df.columns if _f not in excluded_feat]
-    # train_pred, test_pred = train_full(train_df, test_df, train_df['totals.transactionRevenue'], excluded_feat)
-    test_pred = train_test(train_df[train_features], test_df[train_features], train_df['totals.transactionRevenue'])
-
-    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
-    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    # no_use.append('trafficSource.campaignCode')
+    train_df = train_df.sort_values('date')
+    # X = train.drop([col for col in no_use if col in train.columns], axis=1)
+    # y = train['totals.transactionRevenue']
+    # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
+    target = np.log1p(target)
+    train_pred, test_pred = train_full(train_df, test_df, target, excluded_feat)
+    # test_pred = train_test(train_df[train_features], test_df[train_features], target)
+    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
     logger.info("PredictionTime: {}".format(time.time()-t))
 
 
