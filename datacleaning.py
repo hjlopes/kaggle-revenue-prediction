@@ -46,6 +46,11 @@ def preprocess_features(df):
     df[df == '(not set)'] = np.nan
     df[df == '(not provided)'] = np.nan
 
+    df['totals.timeOnSite'].fillna(0, inplace=True)
+    df['totals.timeOnSite'] = df['totals.timeOnSite'].astype(float)
+
+    df['totals.transactions'].fillna(0, inplace=True)
+
     df['trafficSource.adwordsClickInfo.isVideoAd'].fillna(True, inplace=True)  # Variable only contains Falses
     df['trafficSource.isTrueDirect'].fillna(False, inplace=True)  # Variable only contains Trues
     df['totals.bounces'].fillna(0, inplace=True)
@@ -180,7 +185,7 @@ def main():
     # Load initial data
     train_path = "./data/train_v2.csv"
     test_path = "./data/test_v2.csv"
-    train_df = load_csv(train_path, load_all=False)
+    train_df = load_csv(train_path, load_all=True)
     train_df = preprocess_features(train_df)
 
     # Remove Columns with constant values
