@@ -107,7 +107,7 @@ def load_csv(path, nrows=None):
 
         del df_chunk  # Memory save
 
-    df.reset_index(inplace=True)
+    df.reset_index(drop=True, inplace=True)
     print(f"Loaded {os.path.basename(path)}. Shape: {df.shape}")
     return df
 

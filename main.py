@@ -242,7 +242,7 @@ def train_full(train, test, y, excluded):
         _preds[_preds < 0] = 0
         sub_reg_preds += _preds/len(folds)
 
-    _, ax = plt.subplots(1, 1, figsize=(22, 12))
+    _, ax = plt.subplots(1, 1, figsize=(30, 12))
     feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
     feat_plt.get_figure().savefig("feature_importance.png")
     mean_squared_error(y, oof_reg_preds) ** .5
