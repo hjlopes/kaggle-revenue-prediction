@@ -1,23 +1,19 @@
-#%%
 import gc
-
-from datacleaning import load_csv
-from utils import data_to_pickle, load_pickle, get_logger
-
-gc.enable()
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import GroupKFold, KFold
+from utils import data_to_pickle, load_pickle, get_logger
 
+from datacleaning import load_csv
+
+from sklearn.model_selection import GroupKFold, KFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error
-
-
 import lightgbm as lgb
+
+gc.enable()
 
 
 def missing_values_table(df):
@@ -130,7 +126,7 @@ def generate_features(df):
     df['browser_category'] = df['device.browser'] + '_' + df['device.deviceCategory']
     df['browser_operatingSystem'] = df['device.browser'] + '_' + df['device.operatingSystem']
 
-    df['visitNumber'] = np.log1p(df['visitNumber'])
+    df['visitNumber'] = np.log1p(df['visitNumber'].astype(float))
     df['totals.hits'] = np.log1p(df['totals.hits'])
     df['totals.pageviews'] = np.log1p(df['totals.pageviews'].fillna(0))
 
@@ -203,11 +199,11 @@ def generate_features(df):
     """
 
     # Add cumulative count for user
-    df['dummy'] = 1
-    df['user_cumcnt_per_day'] = (df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].cumcount()+1)
-    df['user_sum_per_day'] = df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].transform(sum)
-    df['user_cumcnt_sum_ratio_per_day'] = df['user_cumcnt_per_day'] / df['user_sum_per_day']
-    df.drop('dummy', axis=1, inplace=True)
+    # df['dummy'] = 1
+    # df['user_cumcnt_per_day'] = (df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].cumcount()+1)
+    # df['user_sum_per_day'] = df[['fullVisitorId','visit_date', 'dummy']].groupby(['fullVisitorId','visit_date'])['dummy'].transform(sum)
+    # df['user_cumcnt_sum_ratio_per_day'] = df['user_cumcnt_per_day'] / df['user_sum_per_day']
+    # df.drop('dummy', axis=1, inplace=True)
 
 
 def generate_user_aggregate_features(df):
