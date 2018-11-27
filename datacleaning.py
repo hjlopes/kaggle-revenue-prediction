@@ -181,8 +181,8 @@ def data_clean_and_reduce(df, dataset_name='train', geo_fix=False):
 
 def main():
     # Load initial data
-    train_path = "./data/train.csv"
-    test_path = "./data/test.csv"
+    train_path = "./data/train_v2.csv"
+    test_path = "./data/test_v2.csv"
     train_df = load_csv(train_path)
     train_df = preprocess_features(train_df)
 
