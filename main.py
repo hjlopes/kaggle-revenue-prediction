@@ -239,7 +239,7 @@ def train_lgb_user_grouped(train, test, y, features):
     feature_importance = pd.DataFrame()
     oof_preds = np.zeros(train.shape[0])
     val_preds = np.zeros(test.shape[0])
-    holdout_preds = np.zeros(test.shape[0])
+
     scores = list()
 
     model = lgb.LGBMRegressor(
@@ -271,9 +271,9 @@ def train_lgb_user_grouped(train, test, y, features):
         oof_preds[val_idx] = model.predict(val_x, num_iteration=model.best_iteration_)
         oof_preds[oof_preds < 0] = 0
 
-        _preds = model.predict(val_x, num_iteration=model.best_iteration_)
+        _preds = model.predict(test, num_iteration=model.best_iteration_)
         _preds[_preds < 0] = 0
-        holdout_preds += _preds/n_folds
+        val_preds += _preds/n_folds
 
         scores.append(mean_squared_error(y, _preds) ** .5)
 
@@ -432,7 +432,7 @@ def train_lgb_kfold(train, test, y):
                   eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
                   verbose=500, early_stopping_rounds=100)
 
-        _pred = model.predict(X_valid, num_iteration=model.best_iteration_)
+        _pred = model.predict(test, num_iteration=model.best_iteration_)
         val_preds += _pred
         scores.append(mean_squared_error(y, _pred) ** .5)
     val_preds /= n_fold
