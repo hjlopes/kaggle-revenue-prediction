@@ -17,6 +17,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error
 import lightgbm as lgb
 
+
+RANDOM_SEED = 42
+
 gc.enable()
 
 
@@ -214,7 +217,7 @@ def generate_user_aggregate_features(df):
     return users, y
 
 
-def feature_importance(feat_importance, filename="distributions.png"):
+def feature_importance_plot(feat_importance, filename="distributions.png"):
     feat_importance['gain_log'] = np.log1p(feat_importance['gain'])
     mean_gain = feat_importance[['gain', 'feature']].groupby('feature').mean()
     feat_importance['mean_gain'] = feat_importance['feature'].map(mean_gain['gain'])
@@ -224,32 +227,30 @@ def feature_importance(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
-def train_full(train, test, y, excluded):
-    n_folds = 5
+def train_lgb_user_grouped(train, test, y):
+    n_folds = 10
     folds = get_folds(df=train, n_splits=n_folds)
-    # folds = KFold(n_splits=n_folds, shuffle=False, random_state=42)
 
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
               "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
 
-    train_features = [_f for _f in train.columns if _f not in excluded]
-    logger.info("Train features: {}".format(train_features))
-
-    importances = pd.DataFrame()
-    oof_reg_preds = np.zeros(train.shape[0])
-    sub_reg_preds = np.zeros(test.shape[0])
+    feature_importance = pd.DataFrame()
+    oof_preds = np.zeros(train.shape[0])
+    val_preds = np.zeros(test.shape[0])
+    holdout_preds = np.zeros(test.shape[0])
+    scores = list()
 
     model = lgb.LGBMRegressor(
         **params,
-        n_estimators=5000,
+        n_estimators=20000,
         n_jobs=-1
     )
 
-    for fold_, (trn_, val_) in enumerate(folds):
+    for fold_, (trn_idx, val_idx) in enumerate(folds):
         logger.info("Executing fold #{}".format(fold_))
-        trn_x, trn_y = train[train_features].iloc[trn_], y.iloc[trn_]
-        val_x, val_y = train[train_features].iloc[val_], y.iloc[val_]
+        trn_x, trn_y = train.iloc[trn_idx], y.iloc[trn_idx]
+        val_x, val_y = train.iloc[val_idx], y.iloc[val_idx]
 
         model.fit(
             trn_x, trn_y,
@@ -264,21 +265,29 @@ def train_full(train, test, y, excluded):
         imp_df['gain'] = model.booster_.feature_importance(importance_type='gain')
 
         imp_df['fold'] = fold_ + 1
-        importances = pd.concat([importances, imp_df], axis=0, sort=False)
+        feature_importance = pd.concat([feature_importance, imp_df], axis=0, sort=False)
 
-        oof_reg_preds[val_] = model.predict(val_x, num_iteration=model.best_iteration_)
-        oof_reg_preds[oof_reg_preds < 0] = 0
-        _preds = model.predict(test[train_features], num_iteration=model.best_iteration_)
+        oof_preds[val_idx] = model.predict(val_x, num_iteration=model.best_iteration_)
+        oof_preds[oof_preds < 0] = 0
+
+        _preds = model.predict(test, num_iteration=model.best_iteration_)
         _preds[_preds < 0] = 0
-        sub_reg_preds += _preds/n_folds
+        holdout_preds += _preds/n_folds
+
+        scores.append(mean_squared_error(y, _preds) ** .5)
 
     _, ax = plt.subplots(1, 1, figsize=(30, 12))
     feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
     feat_plt.get_figure().savefig("feature_importance.png")
-    mean_squared_error(y, oof_reg_preds) ** .5
-    feature_importance(importances, filename="session_feat_importance.png")
+    oof_score = mean_squared_error(y, oof_preds) ** .5
+    feature_importance_plot(feature_importance, filename='lgb_cv_{}_st_{}_usergroup.png'.format(np.mean(scores),
+                                                                                                     np.std(scores)))
 
-    return oof_reg_preds, sub_reg_preds
+    # Generate submission files
+    generate_submission_file(test_df['fullVisitorId'], val_preds, 'lgb_cv_{}_st_{}_usergroup'.format(np.mean(scores),
+                                                                                                     np.std(scores)))
+    generate_submission_file(test_df['fullVisitorId'], oof_preds, 'lgb_cv_{}_usergroup_oof'.format(oof_score))
+    return oof_preds, val_preds
 
 
 def train_visit_level(full_data, test_full_data, y):
@@ -397,15 +406,20 @@ def train_user_level(train, test, y):
 """
 
 
-def train_test(train, test, y):
+def train_lgb_kfold(train, test, y):
     params = {"objective" : "regression", "metric" : "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1, "reg_lambda": 0.1,
             "num_leaves" : 1024, "learning_rate" : 0.01, "subsample" : 0.9, "colsample_bytree" : 0.9}
     n_fold = 10
-    folds = KFold(n_splits=n_fold, shuffle=False, random_state=42)
-    # Cleaning and defining parameters for LGBM
-    model = lgb.LGBMRegressor(**params, n_estimators = 20000, n_jobs = -1)
+    folds = KFold(n_splits=n_fold, shuffle=False, random_state=RANDOM_SEED)
 
-    prediction = np.zeros(test.shape[0])
+    model = lgb.LGBMRegressor(
+        **params,
+        n_estimators=20000,
+        n_jobs=-1)
+
+    feature_importance = pd.DataFrame()
+    val_preds = np.zeros(test.shape[0])
+    scores = list()
 
     for fold_n, (train_index, test_index) in enumerate(folds.split(train)):
         print('Fold:', fold_n)
@@ -417,11 +431,23 @@ def train_test(train, test, y):
                   eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
                   verbose=500, early_stopping_rounds=100)
 
-        y_pred = model.predict(test, num_iteration=model.best_iteration_)
-        prediction += y_pred
-    prediction /= n_fold
+        _pred = model.predict(test, num_iteration=model.best_iteration_)
+        val_preds += _pred
+        scores.append(mean_squared_error(y, _pred) ** .5)
+    val_preds /= n_fold
 
-    return prediction
+    _, ax = plt.subplots(1, 1, figsize=(30, 12))
+    feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
+    feat_plt.get_figure().savefig("feature_importance.png")
+
+    feature_importance_plot(feature_importance, filename='lgb_cv_{}_st_{}_usergroup.png'.format(np.mean(scores),
+                                                                                                np.std(scores)))
+
+    # Generate submission files
+    generate_submission_file(test_df['fullVisitorId'], val_preds, 'lgb_cv_{}_st_{}_usergroup'.format(np.mean(scores),
+                                                                                                     np.std(scores)))
+
+    return val_preds
 
 
 def generate_submission_file(test_ids, prediction, filename):
@@ -491,17 +517,16 @@ if __name__ == "__main__":
     #%%
     t = time.time()
     train_features = [_f for _f in train_df.columns if _f not in no_use]
+    logger.info("Train features: {}".format(train_features))
+
     train_df = train_df.sort_values('date')
     # X = train.drop([col for col in no_use if col in train.columns], axis=1)
     # y = train['totals.transactionRevenue']
     # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
     target = np.log1p(train_df['totals.transactionRevenue'])
 
-    train_pred, test_pred = train_full(train_df, test_df, target, no_use)
-    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_usergroup')
-
-    # test_pred = train_test(train_df[train_features], test_df[train_features], target)
-    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    train_pred, test_pred = train_lgb_user_grouped(train_df[train_features], test_df[train_features], target)
+    train_pred, test_pred = train_lgb_kfold(train_df[train_features], test_df[train_features], target)
 
     logger.info("PredictionTime: {}".format(time.time()-t))
 
