@@ -3,6 +3,9 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+
 import seaborn as sns
 
 from utils import data_to_pickle, load_pickle, get_logger
