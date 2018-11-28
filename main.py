@@ -271,7 +271,7 @@ def train_lgb_user_grouped(train, test, y, features):
         oof_preds[val_idx] = model.predict(val_x, num_iteration=model.best_iteration_)
         oof_preds[oof_preds < 0] = 0
 
-        _preds = model.predict(test, num_iteration=model.best_iteration_)
+        _preds = model.predict(val_x, num_iteration=model.best_iteration_)
         _preds[_preds < 0] = 0
         holdout_preds += _preds/n_folds
 
@@ -432,7 +432,7 @@ def train_lgb_kfold(train, test, y):
                   eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
                   verbose=500, early_stopping_rounds=100)
 
-        _pred = model.predict(test, num_iteration=model.best_iteration_)
+        _pred = model.predict(X_valid, num_iteration=model.best_iteration_)
         val_preds += _pred
         scores.append(mean_squared_error(y, _pred) ** .5)
     val_preds /= n_fold
