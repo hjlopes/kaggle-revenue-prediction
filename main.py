@@ -227,10 +227,10 @@ def feature_importance_plot(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
-def train_lgb_user_grouped(train, test, y):
+def train_lgb_user_grouped(train, test, y, features):
     n_folds = 10
     folds = get_folds(df=train, n_splits=n_folds)
-    train = train[train_features]
+    train = train[features]
 
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
