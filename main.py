@@ -230,6 +230,7 @@ def feature_importance_plot(feat_importance, filename="distributions.png"):
 def train_lgb_user_grouped(train, test, y):
     n_folds = 10
     folds = get_folds(df=train, n_splits=n_folds)
+    train = train[train_features]
 
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
@@ -525,8 +526,10 @@ if __name__ == "__main__":
     # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
     target = np.log1p(train_df['totals.transactionRevenue'])
 
-    train_pred, test_pred = train_lgb_user_grouped(train_df[train_features], test_df[train_features], target)
+    train_pred, test_pred = train_lgb_user_grouped(train_df, test_df[train_features], target, train_features)
     train_pred, test_pred = train_lgb_kfold(train_df[train_features], test_df[train_features], target)
+
+    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
 
     logger.info("PredictionTime: {}".format(time.time()-t))
 
