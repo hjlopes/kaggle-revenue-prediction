@@ -1,5 +1,28 @@
 import pickle
 import logging
+import pandas as pd
+
+SUBMISSIONS_FOLDER = "submissions"
+
+
+def factorize_variables(df, excluded=[], cat_indexers=None, logger=None):
+    categorical_features = [
+        _f for _f in df.columns
+        if (_f not in excluded) & (df[_f].dtype in ['object'])
+    ]
+
+    if cat_indexers is None:
+        cat_indexers = {}
+        for f in categorical_features:
+            df[f], indexer = pd.factorize(df[f])
+            cat_indexers[f] = indexer
+    else:
+        for f in categorical_features:
+            if logger is not None:
+                logger.info("Factorizing categorical: {}".format(f))
+            df[f] = cat_indexers[f].get_indexer(df[f])
+
+    return df, cat_indexers, categorical_features
 
 
 def data_to_pickle(data, filename):

@@ -1,4 +1,5 @@
 import gc
+import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -48,23 +49,6 @@ def df_show_value_types(df):
     return df.dtypes.value_counts()
 
 
-def factorize_variables(df, excluded=[], cat_indexers=None):
-    categorical_features = [
-        _f for _f in df.columns
-        if (_f not in excluded) & (df[_f].dtype in ['object'])
-    ]
-
-    if cat_indexers is None:
-        cat_indexers = {}
-        for f in categorical_features:
-            df[f], indexer = pd.factorize(df[f])
-            cat_indexers[f] = indexer
-    else:
-        for f in categorical_features:
-            logger.info("Factorizing categorical: {}".format(f))
-            df[f] = cat_indexers[f].get_indexer(df[f])
-
-    return df, cat_indexers, categorical_features
 
 
 def align_train_test(train_df, test_df):
@@ -442,7 +426,7 @@ def generate_submission_file(test_ids, prediction, filename):
     test['predictedLogRevenue'] = prediction
     submission = test.groupby('fullVisitorId').agg({'predictedLogRevenue': 'sum'}).reset_index()
     submission['predictedLogRevenue'] = np.log1p(submission['predictedLogRevenue'])
-    submission.to_csv("{}.csv".format(filename), index=False)
+    submission.to_csv("submissions/{}_{}.csv".format(filename, time.strftime("%Y%m%d_%H%M%S")), index=False)
 
 
 logger = get_logger(__name__)
@@ -502,7 +486,6 @@ if __name__ == "__main__":
     no_use.append('trafficSource.campaignCode')
 
     #%%
-    import time
     t = time.time()
     train_features = [_f for _f in train_df.columns if _f not in no_use]
     train_df = train_df.sort_values('date')
@@ -510,8 +493,8 @@ if __name__ == "__main__":
     # y = train['totals.transactionRevenue']
     # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
     target = np.log1p(train_df['totals.transactionRevenue'])
-    # train_pred, test_pred = train_full(train_df, test_df, target, excluded_feat)
-    test_pred = train_test(train_df[train_features], test_df[train_features], target)
+    train_pred, test_pred = train_full(train_df, test_df, target, no_use)
+    # test_pred = train_test(train_df[train_features], test_df[train_features], target)
     generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
     # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
     logger.info("PredictionTime: {}".format(time.time()-t))
