@@ -493,10 +493,13 @@ if __name__ == "__main__":
     # y = train['totals.transactionRevenue']
     # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
     target = np.log1p(train_df['totals.transactionRevenue'])
-    train_pred, test_pred = train_full(train_df, test_df, target, no_use)
+
+    train_pred, test_pred = train_full(train_df, test_df, target, train_features)
+    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_usergroup')
+
     # test_pred = train_test(train_df[train_features], test_df[train_features], target)
-    generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
     # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_oof')
+
     logger.info("PredictionTime: {}".format(time.time()-t))
 
 
