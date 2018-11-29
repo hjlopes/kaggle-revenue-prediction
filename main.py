@@ -417,7 +417,7 @@ def train_lgb_kfold(train, test, y):
         n_jobs=-1)
 
     feature_importance = pd.DataFrame()
-    val_preds = np.zeros(test.shape[0])
+    val_preds = np.zeros(train.shape[0])
     scores = list()
     models = list()
 
@@ -431,9 +431,9 @@ def train_lgb_kfold(train, test, y):
                   eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
                   verbose=500, early_stopping_rounds=100)
 
-        _pred = model.predict(X_valid, num_iteration=model.best_iteration_)
-        val_preds += _pred
-        scores.append(mean_squared_error(y_valid, _pred) ** .5)
+        val_preds[test_index] = model.predict(X_valid, num_iteration=model.best_iteration_)
+        val_preds[val_preds < 0] = 0
+        scores.append(mean_squared_error(y_valid, val_preds[test_index]) ** .5)
         models.append(model)
     val_preds /= n_fold
 
