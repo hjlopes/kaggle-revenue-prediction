@@ -74,7 +74,7 @@ def get_folds(df=None, n_splits=5):
     unique_vis = np.array(sorted(df['fullVisitorId'].unique()))
 
     # Get folds
-    folds = GroupKFold(n_splits=n_splits)
+    folds = GroupKFold(n_splits=n_splits, )
     fold_ids = []
     ids = np.arange(df.shape[0])
     for trn_vis, val_vis in folds.split(X=unique_vis, y=unique_vis, groups=unique_vis):
@@ -222,7 +222,7 @@ def feature_importance_plot(feat_importance, filename="distributions.png"):
     mean_gain = feat_importance[['gain', 'feature']].groupby('feature').mean()
     feat_importance['mean_gain'] = feat_importance['feature'].map(mean_gain['gain'])
 
-    plt.figure(figsize=(8, 12))
+    plt.figure(figsize=(22, 12))
     sns.barplot(x='gain_log', y='feature', data=feat_importance.sort_values('mean_gain', ascending=False))
     plt.savefig(filename)
 
@@ -241,6 +241,7 @@ def train_lgb_user_grouped(train, test, y, features):
     val_preds = np.zeros(test.shape[0])
 
     scores = list()
+    models = list()
 
     model = lgb.LGBMRegressor(
         **params,
@@ -262,7 +263,7 @@ def train_lgb_user_grouped(train, test, y, features):
         )
 
         imp_df = pd.DataFrame()
-        imp_df['feature'] = train_features
+        imp_df['feature'] = features
         imp_df['gain'] = model.booster_.feature_importance(importance_type='gain')
 
         imp_df['fold'] = fold_ + 1
@@ -275,6 +276,7 @@ def train_lgb_user_grouped(train, test, y, features):
         _preds[_preds < 0] = 0
         val_preds += _preds/n_folds
 
+        models.append(model)
         scores.append(mean_squared_error(y, _preds) ** .5)
 
     _, ax = plt.subplots(1, 1, figsize=(30, 12))
@@ -284,11 +286,7 @@ def train_lgb_user_grouped(train, test, y, features):
     feature_importance_plot(feature_importance, filename='lgb_cv_{}_st_{}_usergroup.png'.format(np.mean(scores),
                                                                                                      np.std(scores)))
 
-    # Generate submission files
-    generate_submission_file(test_df['fullVisitorId'], val_preds, 'lgb_cv_{}_st_{}_usergroup'.format(np.mean(scores),
-                                                                                                     np.std(scores)))
-    generate_submission_file(test_df['fullVisitorId'], oof_preds, 'lgb_cv_{}_usergroup_oof'.format(oof_score))
-    return oof_preds, val_preds
+    return models
 
 
 def train_visit_level(full_data, test_full_data, y):
@@ -421,6 +419,7 @@ def train_lgb_kfold(train, test, y):
     feature_importance = pd.DataFrame()
     val_preds = np.zeros(test.shape[0])
     scores = list()
+    models = list()
 
     for fold_n, (train_index, test_index) in enumerate(folds.split(train)):
         print('Fold:', fold_n)
@@ -435,20 +434,14 @@ def train_lgb_kfold(train, test, y):
         _pred = model.predict(test, num_iteration=model.best_iteration_)
         val_preds += _pred
         scores.append(mean_squared_error(y, _pred) ** .5)
+        models.append(model)
     val_preds /= n_fold
 
     _, ax = plt.subplots(1, 1, figsize=(30, 12))
     feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
     feat_plt.get_figure().savefig("feature_importance.png")
 
-    feature_importance_plot(feature_importance, filename='lgb_cv_{}_st_{}_usergroup.png'.format(np.mean(scores),
-                                                                                                np.std(scores)))
-
-    # Generate submission files
-    generate_submission_file(test_df['fullVisitorId'], val_preds, 'lgb_cv_{}_st_{}_usergroup'.format(np.mean(scores),
-                                                                                                     np.std(scores)))
-
-    return val_preds
+    return models
 
 
 def generate_submission_file(test_ids, prediction, filename):
@@ -459,9 +452,24 @@ def generate_submission_file(test_ids, prediction, filename):
     submission.to_csv("submissions/{}_{}.csv".format(filename, time.strftime("%Y%m%d_%H%M%S")), index=False)
 
 
+def test_models(models, test, y, features, filename):
+    n_folds = len(models)
+    val_preds = np.zeros(test[features].shape[0])
+    scores = list()
+
+    for model in models:
+        _preds = model.predict(test[features], num_iteration=model.best_iteration_)
+        _preds[_preds < 0] = 0
+        val_preds += _preds/n_folds
+        scores.append(mean_squared_error(y, _preds) ** .5)
+
+    # Generate submission files
+    generate_submission_file(test['fullVisitorId'], val_preds, '{}_{:.5f}_st_{:.5f}'.format(filename, np.mean(scores),
+                                                                                                     np.std(scores)))
+
+
 logger = get_logger(__name__)
 
-#%%
 if __name__ == "__main__":
     #%%
     # print(missing_values_table(train_df))
@@ -515,21 +523,21 @@ if __name__ == "__main__":
 
     no_use.append('trafficSource.campaignCode')
 
-    #%%
     t = time.time()
-    train_features = [_f for _f in train_df.columns if _f not in no_use]
-    logger.info("Train features: {}".format(train_features))
+    features = [_f for _f in train_df.columns if _f not in no_use]
+    logger.info("Train features: {}".format(features))
 
     train_df = train_df.sort_values('date')
-    # X = train.drop([col for col in no_use if col in train.columns], axis=1)
-    # y = train['totals.transactionRevenue']
-    # X_test = test.drop([col for col in no_use if col in test.columns], axis=1)
+
     target = np.log1p(train_df['totals.transactionRevenue'])
+    test_target = np.log1p(test_df['totals.transactionRevenue'])
 
-    train_pred, test_pred = train_lgb_user_grouped(train_df, test_df[train_features], target, train_features)
-    train_pred, test_pred = train_lgb_kfold(train_df[train_features], test_df[train_features], target)
+    models_user_group = train_lgb_user_grouped(train_df, test_df[features], target, features)
+    models_kfold = train_lgb_kfold(train_df[features], test_df[features], target)
 
-    # generate_submission_file(test_df['fullVisitorId'], test_pred, 'lgb_normal')
+    # Generate submission files
+    test_models(models_user_group, test_df, test_target, features, "lgb_usergroup")
+    test_models(models_kfold, test_df, test_target, features, "lgb_kfolds")
 
     logger.info("PredictionTime: {}".format(time.time()-t))
 
