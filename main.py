@@ -238,7 +238,7 @@ def train_lgb_user_grouped(train, test, y, features):
 
     feature_importance = pd.DataFrame()
     oof_preds = np.zeros(train.shape[0])
-    val_preds = np.zeros(test.shape[0])
+    # val_preds = np.zeros(test.shape[0])
 
     scores = list()
     models = list()
@@ -272,12 +272,12 @@ def train_lgb_user_grouped(train, test, y, features):
         oof_preds[val_idx] = model.predict(val_x, num_iteration=model.best_iteration_)
         oof_preds[oof_preds < 0] = 0
 
-        _preds = model.predict(test, num_iteration=model.best_iteration_)
-        _preds[_preds < 0] = 0
-        val_preds += _preds/n_folds
+        # _preds = model.predict(test, num_iteration=model.best_iteration_)
+        # _preds[_preds < 0] = 0
+        # val_preds += oof_preds/n_folds
 
         models.append(model)
-        scores.append(mean_squared_error(y, _preds) ** .5)
+        scores.append(mean_squared_error(val_y, oof_preds[val_idx]) ** .5)
 
     _, ax = plt.subplots(1, 1, figsize=(30, 12))
     feat_plt = lgb.plot_importance(model, ax=ax, max_num_features=50)
@@ -431,9 +431,9 @@ def train_lgb_kfold(train, test, y):
                   eval_set=[(X_train, y_train), (X_valid, y_valid)], eval_metric='rmse',
                   verbose=500, early_stopping_rounds=100)
 
-        _pred = model.predict(test, num_iteration=model.best_iteration_)
+        _pred = model.predict(X_valid, num_iteration=model.best_iteration_)
         val_preds += _pred
-        scores.append(mean_squared_error(y, _pred) ** .5)
+        scores.append(mean_squared_error(y_valid, _pred) ** .5)
         models.append(model)
     val_preds /= n_fold
 
