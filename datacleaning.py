@@ -164,7 +164,7 @@ def main():
     # Load initial data
     train_path = "./data/train_v2.csv"
     test_path = "./data/test_v2.csv"
-    train_df = load_csv(train_path, load_all=False)
+    train_df = load_csv(train_path, load_all=True)
     train_df = preprocess_features(train_df)
 
     # Remove Columns with constant values
@@ -179,7 +179,7 @@ def main():
 
     # data_clean_and_reduce(train_df, dataset_name='train',)
 
-    test_df = load_csv(test_path, load_all=False)
+    test_df = load_csv(test_path, load_all=True)
     test_df = preprocess_features(test_df)
     test_df.drop(columns=const_cols, inplace=True)
     reduced_data_path = 'data/reduced_{}_df.pickle'.format("test")
