@@ -227,10 +227,10 @@ def feature_importance_plot(feat_importance, filename="distributions.png"):
     plt.savefig(filename)
 
 
-def train_lgb_user_grouped(train, test, y, features):
+def train_lgb_user_grouped(train, y, feats):
     n_folds = 10
     folds = get_folds(df=train, n_splits=n_folds)
-    train = train[features]
+    train = train[feats]
 
     params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
               "reg_lambda": 0.1,
@@ -263,7 +263,7 @@ def train_lgb_user_grouped(train, test, y, features):
         )
 
         imp_df = pd.DataFrame()
-        imp_df['feature'] = features
+        imp_df['feature'] = feats
         imp_df['gain'] = model.booster_.feature_importance(importance_type='gain')
 
         imp_df['fold'] = fold_ + 1
@@ -462,6 +462,7 @@ def test_models(models, test, y, features, filename):
         _preds[_preds < 0] = 0
         val_preds += _preds/n_folds
         scores.append(mean_squared_error(y, _preds) ** .5)
+        logger.info("MSE on TEST: {}".format())
 
     # Generate submission files
     generate_submission_file(test['fullVisitorId'], val_preds, '{}_{:.5f}_st_{:.5f}'.format(filename, np.mean(scores),
@@ -532,7 +533,7 @@ if __name__ == "__main__":
     target = np.log1p(train_df['totals.transactionRevenue'])
     test_target = np.log1p(test_df['totals.transactionRevenue'])
 
-    models_user_group = train_lgb_user_grouped(train_df, test_df[features], target, features)
+    models_user_group = train_lgb_user_grouped(train_df, target, features)
     models_kfold = train_lgb_kfold(train_df[features], test_df[features], target)
 
     # Generate submission files

@@ -1,8 +1,32 @@
 import pickle
 import logging
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 SUBMISSIONS_FOLDER = "submissions"
+
+
+def hotencode_variables(df, excluded_columns=[], nan_as_category=False):
+    # Encode binary class with Label encoder
+    categorical_features = [
+        _f for _f in df.columns
+        if (_f not in excluded_columns) & (df[_f].dtype in ['object', 'category'])
+    ]
+
+    label_enc = LabelEncoder()
+    for column in categorical_features:
+        if df[column].dtype in ['object', 'category']:
+            if len(df[column].unique().tolist()) <= 2:
+                print(column)
+                # df[column] = df[column].fillna('0')
+                label_enc.fit(df[column])
+                df[column] = label_enc.transform(df[column])
+                print("Enconded ", column)
+
+    # Encode multi-class with one Hot-encoder
+    df = pd.get_dummies(df, columns=categorical_features)
+
+    return df
 
 
 def factorize_variables(df, excluded=[], cat_indexers=None, logger=None):

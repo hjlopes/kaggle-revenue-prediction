@@ -2,7 +2,7 @@ import gc
 import json
 import re
 import os
-from utils import get_logger
+from utils import get_logger, hotencode_variables
 
 logger = get_logger(__name__)
 
@@ -17,27 +17,6 @@ from pandas.io.json import json_normalize
 
 from sklearn.ensemble import RandomForestClassifier
 
-
-def hotencode_variables(df, excluded_columns=[], nan_as_category=False):
-    # Encode binary class with Label encoder
-    categorical_features = [
-        _f for _f in df.columns
-        if (_f not in excluded_columns) & (df[_f].dtype in ['object', 'category'])
-    ]
-
-    label_enc = LabelEncoder()
-    for column in categorical_features:
-        if df[column].dtype in ['object', 'category']:
-            if len(df[column].unique().tolist()) <= 2:
-                print(column)
-                # df[column] = df[column].fillna('0')
-                label_enc.fit(df[column])
-                df[column] = label_enc.transform(df[column])
-                print("Enconded ", column)
-
-    # Encode multi-class with one Hot-encoder
-    df = pd.get_dummies(df, columns=categorical_features)
-    return df
 
 
 def preprocess_features(df):
@@ -89,7 +68,7 @@ def load_csv(path, nrows=None, load_all=True):
     chunk = pd.read_csv(path,
                      converters={column: json.loads for column in json_columns},
                      dtype={'fullVisitorId': 'str'},
-                     nrows=nrows, chunksize=250000)
+                     nrows=nrows, chunksize=5000)
 
     for idx, df_chunk in enumerate(chunk):
         logger.info("Processing chunk #{}".format(idx))
@@ -185,7 +164,7 @@ def main():
     # Load initial data
     train_path = "./data/train_v2.csv"
     test_path = "./data/test_v2.csv"
-    train_df = load_csv(train_path, load_all=True)
+    train_df = load_csv(train_path, load_all=False)
     train_df = preprocess_features(train_df)
 
     # Remove Columns with constant values
@@ -200,7 +179,7 @@ def main():
 
     # data_clean_and_reduce(train_df, dataset_name='train',)
 
-    test_df = load_csv(test_path)
+    test_df = load_csv(test_path, load_all=False)
     test_df = preprocess_features(test_df)
     test_df.drop(columns=const_cols, inplace=True)
     reduced_data_path = 'data/reduced_{}_df.pickle'.format("test")
