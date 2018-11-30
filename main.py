@@ -462,7 +462,7 @@ def test_models(models, test, y, features, filename):
         _preds[_preds < 0] = 0
         val_preds += _preds/n_folds
         scores.append(mean_squared_error(y, _preds) ** .5)
-        logger.info("MSE on TEST: {}".format())
+        logger.info("MSE on TEST: {}".format(np.mean(scores)))
 
     # Generate submission files
     generate_submission_file(test['fullVisitorId'], val_preds, '{}_{:.5f}_st_{:.5f}'.format(filename, np.mean(scores),

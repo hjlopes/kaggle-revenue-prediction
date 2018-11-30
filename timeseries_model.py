@@ -17,7 +17,7 @@ test_path = 'data/reduced_test_df.pickle'
 
 
 def generate_features(df):
-    df['date'] = pd.to_datetime(df['date'], unit='s')
+    df['date'] = pd.to_datetime(df['visitStartTime'], unit='s')
     df['month'] = df['date'].dt.month
     df['day'] = df['date'].dt.day
     df['weekday'] = df['date'].dt.weekday
