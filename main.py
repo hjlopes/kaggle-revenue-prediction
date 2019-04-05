@@ -233,9 +233,6 @@ def train_lgb_user_grouped(train, y, feats):
     folds = get_folds(df=train, n_splits=n_folds)
     train = train[feats]
 
-    params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
-              "reg_lambda": 0.1,
-              "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
 
     feature_importance = pd.DataFrame()
     oof_preds = np.zeros(train.shape[0])
@@ -244,6 +241,9 @@ def train_lgb_user_grouped(train, y, feats):
     scores = list()
     models = list()
 
+    params = {"objective": "regression", "metric": "rmse", "max_depth": 12, "min_child_samples": 20, "reg_alpha": 0.1,
+              "reg_lambda": 0.1,
+              "num_leaves": 1024, "learning_rate": 0.01, "subsample": 0.9, "colsample_bytree": 0.9}
     model = lgb.LGBMRegressor(
         **params,
         n_estimators=20000,
@@ -288,122 +288,6 @@ def train_lgb_user_grouped(train, y, feats):
                                                                                                      np.std(scores)))
 
     return models
-
-
-def train_visit_level(full_data, test_full_data, y):
-    folds = get_folds(df=full_data[['totals.pageviews']].reset_index(), n_splits=5)
-
-    oof_preds = np.zeros(full_data.shape[0])
-    sub_preds = np.zeros(test_full_data.shape[0])
-    vis_importances = pd.DataFrame()
-
-    for fold_, (trn_, val_) in enumerate(folds):
-        trn_x, trn_y = full_data.iloc[trn_], y.iloc[trn_]
-        val_x, val_y = full_data.iloc[val_], y.iloc[val_]
-
-        reg = lgb.LGBMRegressor(
-            num_leaves=31,
-            learning_rate=0.03,
-            n_estimators=1000,
-            subsample=.9,
-            colsample_bytree=.9,
-            random_state=1
-        )
-        reg.fit(
-            trn_x, np.log1p(trn_y),
-            eval_set=[(trn_x, np.log1p(trn_y)), (val_x, np.log1p(val_y))],
-            eval_names=['TRAIN', 'VALID'],
-            early_stopping_rounds=50,
-            eval_metric='rmse',
-            verbose=100
-        )
-
-        imp_df = pd.DataFrame()
-        imp_df['feature'] = trn_x.columns
-        imp_df['gain'] = reg.booster_.feature_importance(importance_type='gain')
-
-        imp_df['fold'] = fold_ + 1
-        vis_importances = pd.concat([vis_importances, imp_df], axis=0, sort=False)
-
-        oof_preds[val_] = reg.predict(val_x, num_iteration=reg.best_iteration_)
-        oof_preds[oof_preds < 0] = 0
-
-        # Make sure features are in the same order
-        _preds = reg.predict(test_full_data[full_data.columns], num_iteration=reg.best_iteration_)
-        _preds[_preds < 0] = 0
-        sub_preds += _preds / len(folds)
-
-    # logger.info("Validation MSE: {]".format(mean_squared_error(np.log1p(y), oof_preds) ** .5))
-    # test_full_df = pd.DataFrame(index=train_full_df.index)
-    test_full_df['PredictedLogRevenue'] = sub_preds
-    test_full_df[['PredictedLogRevenue']].to_csv("multi_lvl_lgb.csv", index=True)
-
-"""
-
-def train_user_level(train, test, y):
-    try:
-        folds = KFold(n_splits=5, shuffle=True, random_state=1123442)
-
-        sub_preds = np.zeros(test.shape[0])
-        oof_preds = np.zeros(train.shape[0])
-        oof_scores = []
-
-        lgb_params = {
-            'learning_rate': 0.03,
-            'n_estimators': 2000,
-            'num_leaves': 128,
-            'subsample': 0.2217,
-            'colsample_bytree': 0.6810,
-            'min_split_gain': np.power(10.0, -4.9380),
-            'reg_alpha': np.power(10.0, -3.2454),
-            'reg_lambda': np.power(10.0, -4.8571),
-            'min_child_weight': np.power(10.0, 2),
-            'silent': True
-        }
-
-        for fold_, (trn_, val_) in enumerate(folds.split(train)):
-            model = lgb.LGBMRegressor(**lgb_params)
-
-            model.fit(
-                train.iloc[trn_], y.iloc[trn_],
-                eval_set=[(train.iloc[trn_], y.iloc[trn_]),
-                          (train.iloc[val_], y.iloc[val_])],
-                eval_metric='rmse',
-                early_stopping_rounds=200,
-                verbose=0
-            )
-
-            oof_preds[val_] = model.predict(train.iloc[val_])
-            curr_sub_preds = model.predict(test)
-            curr_sub_preds[curr_sub_preds < 0] = 0
-            sub_preds += curr_sub_preds / folds.n_splits
-
-            logger.info('Fold %d RMSE (raw output) : %.5f' % (fold_ + 1, rmse(y.iloc[val_], oof_preds[val_])))
-            oof_preds[oof_preds < 0] = 0
-            oof_scores.append(rmse(y.iloc[val_], oof_preds[val_]))
-            logger.info('Fold %d RMSE : %.5f' % (fold_ + 1, oof_scores[-1]))
-
-        logger.info(
-            'Full OOF RMSE (zero clipped): %.5f +/- %.5f' % (rmse(y, oof_preds), float(np.std(oof_scores))))
-
-        # Stay in logs for submission
-        test['PredictedLogRevenue'] = sub_preds
-        test[['PredictedLogRevenue']].to_csv("simple_lgb.csv", index=True)
-
-        logger.info('Submission data shape : {}'.format(test[['PredictedLogRevenue']].shape))
-
-        hist, bin_edges = np.histogram(np.hstack((oof_preds, sub_preds)), bins=25)
-        plt.figure(figsize=(12, 7))
-        plt.title('Distributions of OOF and TEST predictions', fontsize=15, fontweight='bold')
-        plt.hist(oof_preds, label='OOF predictions', alpha=.6, bins=bin_edges, density=True, log=True)
-        plt.hist(sub_preds, label='TEST predictions', alpha=.6, bins=bin_edges, density=True, log=True)
-        plt.legend()
-        plt.savefig('distributions.png')
-
-    except Exception as err:
-
-        logger.exception("Unexpected error")
-"""
 
 
 def train_lgb_kfold(train, test, y):
@@ -482,6 +366,9 @@ if __name__ == "__main__":
 
     from datacleaning import main as main_datacleaning
     # main_datacleaning()
+    # Score improvement with the geonetwork data cleaning. It's not worth your time
+    # 1.4328 to
+    # 1.4326 :(
 
     # Load reduced df
     # train_path = 'data/redu_geo_fix_train_df.pickle'
@@ -542,30 +429,3 @@ if __name__ == "__main__":
     test_models(models_kfold, test_df, test_target, features, "lgb_kfolds")
 
     logger.info("PredictionTime: {}".format(time.time()-t))
-
-
-    """
-    #$$
-    train_df['predictions'] = train_pred
-    test_df['predictions'] = test_pred
-    train_full_df, feats = stack_features(train_df)
-    test_full_df, _ = stack_features(test_df, train_feats=feats)
-    target = train_full_df['totals.transactionRevenue']
-    train_full_df.drop(columns=['totals.transactionRevenue'], inplace=True)
-
-    #%%
-    stacked_train_path = 'data/stacked_train_df.pickle'
-    stacked_test_path = 'data/stacked_test_df.pickle'
-    # Dump data to pickles
-    data_to_pickle(train_full_df, stacked_train_path)
-    data_to_pickle(test_full_df, stacked_test_path)
-
-    #%%
-    # Load reduced df
-    train_full_df = load_pickle(stacked_train_path)
-    test_full_df = load_pickle(stacked_test_path)
-
-    #%%
-    train_visit_level(train_full_df, test_full_df, target)
-    """
-
